@@ -52,7 +52,11 @@ body {
   font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  overscroll-behavior-y: none;
+  /* Both axes. Leaving the x axis at `auto` lets a horizontal trackpad or
+     touch swipe trigger the browser's back/forward navigation gesture — the
+     previous page slides in from the edge, and the swipe never reaches the
+     card underneath it. */
+  overscroll-behavior: none;
 }
 
 #root {
