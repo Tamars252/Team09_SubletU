@@ -1,0 +1,25 @@
+{
+  "name": "subletu",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SubletU — student sublet marketplace with swipe browsing and a live map",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c magenta,cyan \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm run dev --workspace server",
+    "dev:web": "npm run dev --workspace web",
+    "seed": "npm run seed --workspace server",
+    "build": "npm run build --workspace web",
+    "start": "npm run start --workspace server",
+    "typecheck": "npm run typecheck --workspace server && npm run typecheck --workspace web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=22.6"
+  }
+}

@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+
+# runtime data / secrets
+server/data/
+server/uploads/
+.env
+.env.local
+
+# Visual Paradigm scratch
+*.vpp.bak*
+~$*
