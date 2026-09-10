@@ -1,0 +1,200 @@
+import { useCallback, useEffect, useState } from "react";
+import { api } from "./api/client.ts";
+import type { Filters, Listing, Reference } from "./api/types.ts";
+import { EMPTY_FILTERS } from "./api/types.ts";
+import { useAuth } from "./state/AuthContext.tsx";
+import { AuthScreen } from "./screens/AuthScreen.tsx";
+import { Browse } from "./screens/Browse.tsx";
+import { MapScreen } from "./screens/MapScreen.tsx";
+import { Saved } from "./screens/Saved.tsx";
+import { Messages } from "./screens/Messages.tsx";
+import { Post } from "./screens/Post.tsx";
+import { Settings } from "./screens/Settings.tsx";
+import { ListingDetail } from "./screens/ListingDetail.tsx";
+import { ReportSheet } from "./components/ReportSheet.tsx";
+import {
+  IconCards,
+  IconChat,
+  IconHeart,
+  IconMap,
+  IconPlus,
+  IconUser,
+} from "./components/Icons.tsx";
+
+type Tab = "browse" | "map" | "post" | "saved" | "messages" | "settings";
+
+const TABS: Array<{ key: Tab; label: string; icon: typeof IconCards }> = [
+  { key: "browse", label: "Browse", icon: IconCards },
+  { key: "map", label: "Map", icon: IconMap },
+  { key: "post", label: "Post", icon: IconPlus },
+  { key: "saved", label: "Saved", icon: IconHeart },
+  { key: "messages", label: "Messages", icon: IconChat },
+  { key: "settings", label: "Profile", icon: IconUser },
+];
+
+export function App() {
+  const { user, loading } = useAuth();
+  const [reference, setReference] = useState<Reference | null>(null);
+  const [tab, setTab] = useState<Tab>("browse");
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [detail, setDetail] = useState<Listing | null>(null);
+  const [reporting, setReporting] = useState<Listing | null>(null);
+  const [savedKey, setSavedKey] = useState(0);
+  const [unread, setUnread] = useState(0);
+  const [openConversation, setOpenConversation] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .reference()
+      .then(setReference)
+      .catch(() => undefined);
+  }, []);
+
+  const refreshUnread = useCallback(() => {
+    if (!user) return;
+    api
+      .unreadCount()
+      .then(({ unread: n }) => setUnread(n))
+      .catch(() => undefined);
+  }, [user]);
+
+  useEffect(() => {
+    refreshUnread();
+    if (!user) return;
+    // Light polling keeps the badge honest without a websocket layer.
+    const timer = setInterval(refreshUnread, 20_000);
+    return () => clearInterval(timer);
+  }, [refreshUnread, user]);
+
+  // Default the campus filter anchor to the signed-in user's school.
+  useEffect(() => {
+    if (user) setFilters((f) => ({ ...f }));
+  }, [user?.university]);
+
+  const bumpSaved = useCallback(() => setSavedKey((k) => k + 1), []);
+
+  function openListing(listing: Listing) {
+    setDetail(listing);
+  }
+
+  if (loading) {
+    return (
+      <div className="app">
+        <div className="center-state" style={{ flex: 1 }}>
+          <div className="spinner" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="app">
+        <div className="app-main">
+          <AuthScreen reference={reference} />
+        </div>
+      </div>
+    );
+  }
+
+  const detailOpen = detail !== null;
+  const fullBleed = tab === "browse" || tab === "map";
+
+  return (
+    <div className="app">
+      {detailOpen ? (
+        <div className="app-main">
+          <ListingDetail
+            listing={detail}
+            isOwnListing={detail.ownerId === user.id}
+            onBack={() => setDetail(null)}
+            onReport={setReporting}
+            onSavedChange={bumpSaved}
+            onMessageSent={(conversationId) => {
+              setOpenConversation(conversationId);
+              setDetail(null);
+              setTab("messages");
+              refreshUnread();
+            }}
+          />
+        </div>
+      ) : (
+        <div className={`app-main${fullBleed ? " no-scroll" : ""}`}>
+          {tab === "browse" && (
+            <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+              <Browse
+                filters={filters}
+                onFiltersChange={setFilters}
+                reference={reference}
+                onOpenListing={openListing}
+                onReport={setReporting}
+                onSavedChange={bumpSaved}
+              />
+            </div>
+          )}
+
+          {tab === "map" && (
+            <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+              <MapScreen
+                filters={filters}
+                onFiltersChange={setFilters}
+                reference={reference}
+                university={user.university}
+                onOpenListing={openListing}
+              />
+            </div>
+          )}
+
+          {tab === "post" && (
+            <Post reference={reference} onPosted={openListing} onOpenListing={openListing} />
+          )}
+
+          {tab === "saved" && (
+            <Saved
+              refreshKey={savedKey}
+              onOpenListing={openListing}
+              onSavedChange={bumpSaved}
+              onBrowse={() => setTab("browse")}
+            />
+          )}
+
+          {tab === "messages" && (
+            <Messages
+              openConversationId={openConversation}
+              onConsumeOpen={() => setOpenConversation(null)}
+              onUnreadChange={refreshUnread}
+            />
+          )}
+
+          {tab === "settings" && <Settings reference={reference} />}
+        </div>
+      )}
+
+      {!detailOpen && (
+        <nav className="nav">
+          {TABS.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              type="button"
+              className={`nav-item${tab === key ? " active" : ""}`}
+              onClick={() => setTab(key)}
+              aria-current={tab === key}
+            >
+              <Icon size={21} strokeWidth={tab === key ? 2.4 : 2} />
+              {label}
+              {key === "messages" && unread > 0 && <span className="nav-dot" />}
+            </button>
+          ))}
+        </nav>
+      )}
+
+      {reporting && (
+        <ReportSheet
+          listing={reporting}
+          reference={reference}
+          onClose={() => setReporting(null)}
+        />
+      )}
+    </div>
+  );
+}
