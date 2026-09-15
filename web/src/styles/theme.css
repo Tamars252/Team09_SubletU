@@ -1608,3 +1608,209 @@ input[type="range"]::-webkit-slider-thumb {
   padding: 1px 5px;
   border-radius: 4px;
 }
+
+/* ------------------------------------------------------------------- auth */
+
+.auth-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 28px 22px 40px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+}
+
+.auth-brand {
+  font-family: var(--font-display);
+  font-size: 40px;
+  font-weight: 700;
+  color: var(--terracotta);
+  letter-spacing: -0.02em;
+  margin-bottom: 10px;
+}
+.auth-brand span {
+  color: var(--ink);
+}
+
+.auth-heading {
+  font-family: var(--font-display);
+  font-size: 23px;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.auth-tagline {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.5;
+  margin: 0 0 24px;
+}
+
+.auth-hint {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 8px 0 0;
+}
+
+.auth-dev-flag {
+  margin: 10px 0 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: #fdf3d6;
+  border: 1px solid #edd9a3;
+  color: #7a5c14;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+/* Microsoft's guidelines ask for their mark on a plain white or black button. */
+.btn-sso {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 16px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.btn-sso:hover {
+  border-color: #c9c0b7;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 22px 0 18px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--sand);
+  margin-bottom: 18px;
+}
+.auth-tabs button {
+  flex: 1;
+  padding: 9px 12px;
+  border-radius: 9px;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--muted);
+}
+.auth-tabs button.on {
+  background: #fff;
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+
+.auth-links {
+  margin-top: 16px;
+  text-align: center;
+}
+
+.linkish {
+  color: var(--terracotta);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.banner-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.sso-stub-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+/* -------------------------------------------------------- password field */
+
+.password-wrap {
+  position: relative;
+}
+.password-wrap .input {
+  padding-right: 62px;
+}
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  padding: 5px 8px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.password-toggle:hover {
+  background: var(--sand);
+  color: var(--ink);
+}
+
+.strength {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.strength-track {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--sand);
+  overflow: hidden;
+}
+.strength-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.2s ease, background 0.2s ease;
+  background: #c9453a;
+}
+.strength-fill.s3 {
+  background: #d49a3a;
+}
+.strength-fill.s4 {
+  background: #6f9e4c;
+}
+.strength-fill.s5 {
+  background: #3a8d5c;
+}
+.strength-label {
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 96px;
+  text-align: right;
+}

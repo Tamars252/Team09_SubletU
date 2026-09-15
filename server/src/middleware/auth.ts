@@ -14,6 +14,10 @@ export type AuthUser = {
   rating: number;
   reviewCount: number;
   createdAt: string;
+  tokenVersion: number;
+  /** How this account can sign in — drives what the Profile screen offers. */
+  hasPassword: boolean;
+  linkedToSso: boolean;
 };
 
 declare global {
@@ -27,7 +31,8 @@ declare global {
 
 const selectUser = db.prepare(
   `SELECT id, email, name, university, bio, avatar_initials, verified,
-          rating, review_count, created_at
+          rating, review_count, created_at, token_version,
+          sso_subject, password_hash
    FROM users WHERE id = ?`,
 );
 
@@ -44,6 +49,9 @@ export function loadUserById(id: string): AuthUser | null {
         rating: number;
         review_count: number;
         created_at: string;
+        token_version: number;
+        sso_subject: string | null;
+        password_hash: string | null;
       }
     | undefined;
   if (!row) return null;
@@ -58,6 +66,9 @@ export function loadUserById(id: string): AuthUser | null {
     rating: row.rating,
     reviewCount: row.review_count,
     createdAt: row.created_at,
+    tokenVersion: row.token_version ?? 1,
+    hasPassword: Boolean(row.password_hash),
+    linkedToSso: Boolean(row.sso_subject),
   };
 }
 
@@ -74,7 +85,11 @@ export function attachUser(req: Request, _res: Response, next: NextFunction): vo
     const payload = verifyToken(token);
     if (payload) {
       const user = loadUserById(payload.sub);
-      if (user) req.user = user;
+      // A signature alone is not enough: the token also has to match the
+      // account's current version, so resetting a password retires every
+      // session issued before it. Tokens minted before this field existed
+      // carry no `tv` and are treated as version 1.
+      if (user && (payload.tv ?? 1) === user.tokenVersion) req.user = user;
     }
   }
   next();

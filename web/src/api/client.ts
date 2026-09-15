@@ -1,4 +1,5 @@
 import type {
+  AuthConfig,
   Conversation,
   Filters,
   Listing,
@@ -91,8 +92,45 @@ export const api = {
     return request<{ user: User }>("/auth/me", { method: "PATCH", body });
   },
 
-  changePassword(body: { currentPassword: string; newPassword: string }) {
-    return request<{ ok: boolean }>("/auth/password", { method: "POST", body });
+  /** An SSO-only account has no current password, so it may be omitted. */
+  changePassword(body: { currentPassword?: string; newPassword: string }) {
+    return request<{ token: string; user: User }>("/auth/password", { method: "POST", body });
+  },
+
+  /* -------------------------------------------------------- sso and resets */
+
+  authConfig() {
+    return request<AuthConfig>("/auth/config");
+  },
+
+  /** Trades the one-time code from /auth/callback for a session. */
+  ssoExchange(code: string) {
+    return request<{ token: string; user: User }>("/auth/sso/exchange", {
+      method: "POST",
+      body: { code },
+    });
+  },
+
+  /** Dev-mode stand-in for Microsoft; refused unless the server enables it. */
+  ssoDevComplete(body: { email: string; name?: string }) {
+    return request<{ code: string }>("/auth/sso/dev-complete", { method: "POST", body });
+  },
+
+  forgotPassword(email: string) {
+    return request<{ ok: boolean; message: string }>("/auth/forgot", {
+      method: "POST",
+      body: { email },
+    });
+  },
+
+  checkResetToken(token: string) {
+    return request<{ valid: boolean; passwordMinLength: number }>(
+      `/auth/reset/check?token=${encodeURIComponent(token)}`,
+    );
+  },
+
+  resetPassword(body: { token: string; password: string }) {
+    return request<{ token: string; user: User }>("/auth/reset", { method: "POST", body });
   },
 
   /* --------------------------------------------------------------- listings */
