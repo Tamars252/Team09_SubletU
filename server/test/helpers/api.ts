@@ -81,7 +81,10 @@ export class TestApi {
   }
 
   /** Registers a fresh user and returns their token, without changing `this.token`. */
-  async registerUser(overrides: Record<string, unknown> = {}): Promise<{
+  async registerUser(
+    overrides: Record<string, unknown> = {},
+    options: { verified?: boolean } = {},
+  ): Promise<{
     token: string;
     user: { id: string; email: string; name: string; verified: boolean };
   }> {
@@ -91,15 +94,35 @@ export class TestApi {
       user: { id: string; email: string; name: string; verified: boolean };
     }>("/api/auth/register", {
       email: `test-${unique}@syr.edu`,
-      password: "sublet123",
+      password: TEST_PASSWORD,
       name: "Test Student",
       ...overrides,
     });
     if (res.status !== 201) {
       throw new Error(`registerUser failed: ${res.status} ${JSON.stringify(res.body)}`);
     }
+
+    // Registration deliberately leaves an account unverified until its owner
+    // enters the emailed code, and unverified accounts cannot post or message.
+    // Most tests are about something else entirely, so confirm by default and
+    // let a test opt out when the gate is the thing under test.
+    if (options.verified !== false) {
+      markVerified(res.body.user.id);
+      res.body.user.verified = true;
+    }
     return res.body;
   }
+}
+
+/**
+ * Long enough for the 12-character minimum and not on the blocklist, so it
+ * survives the strength check the register route now applies.
+ */
+export const TEST_PASSWORD = "vaulted anchor lantern moth";
+
+/** Confirms an account the way entering the emailed code would. */
+export function markVerified(userId: string): void {
+  db.prepare("UPDATE users SET verified = 1 WHERE id = ?").run(userId);
 }
 
 /**

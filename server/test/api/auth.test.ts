@@ -1,7 +1,7 @@
 import "../helpers/env.ts";
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { TestApi } from "../helpers/api.ts";
+import { TEST_PASSWORD, TestApi } from "../helpers/api.ts";
 
 let api: TestApi;
 before(async () => {
@@ -25,17 +25,17 @@ describe("POST /api/auth/register", () => {
   it("never returns the password hash", async () => {
     const res = await api.post("/api/auth/register", {
       email: `hash-check-${Date.now()}@syr.edu`,
-      password: "sublet123",
+      password: TEST_PASSWORD,
       name: "Test Student",
     });
     assert.equal(res.status, 201);
     assert.ok(!JSON.stringify(res.body).toLowerCase().includes("scrypt"));
-    assert.ok(!JSON.stringify(res.body).includes("sublet123"));
+    assert.ok(!JSON.stringify(res.body).includes(TEST_PASSWORD));
   });
 
   it("rejects a duplicate email with 409", async () => {
     const email = `dupe-${Date.now()}@syr.edu`;
-    const body = { email, password: "sublet123", name: "First Student" };
+    const body = { email, password: TEST_PASSWORD, name: "First Student" };
     assert.equal((await api.post("/api/auth/register", body)).status, 201);
 
     const second = await api.post<{ error: string }>("/api/auth/register", body);
@@ -47,12 +47,12 @@ describe("POST /api/auth/register", () => {
     const stamp = Date.now();
     await api.post("/api/auth/register", {
       email: `Case-${stamp}@syr.edu`,
-      password: "sublet123",
+      password: TEST_PASSWORD,
       name: "Case Student",
     });
     const clash = await api.post("/api/auth/register", {
       email: `case-${stamp}@syr.edu`,
-      password: "sublet123",
+      password: TEST_PASSWORD,
       name: "Other Student",
     });
     assert.equal(clash.status, 409);
@@ -61,7 +61,7 @@ describe("POST /api/auth/register", () => {
   it("rejects a malformed email", async () => {
     const res = await api.post("/api/auth/register", {
       email: "not-an-email",
-      password: "sublet123",
+      password: TEST_PASSWORD,
       name: "Test Student",
     });
     assert.equal(res.status, 400);
@@ -76,23 +76,42 @@ describe("POST /api/auth/register", () => {
     assert.equal(res.status, 400);
   });
 
-  it("auto-verifies a .edu address but not a personal one", async () => {
-    const edu = await api.registerUser();
-    assert.equal(edu.user.verified, true);
+  it("does not verify an account just because the domain matches", async () => {
+    // Typing a syr.edu address only proves you can type. Reading the code sent
+    // to it is what proves the address is yours.
+    const fresh = await api.registerUser({}, { verified: false });
+    assert.equal(fresh.user.verified, false);
+  });
 
-    const gmail = await api.registerUser({ email: `person-${Date.now()}@gmail.com` });
-    assert.equal(gmail.user.verified, false);
+  it("refuses an address outside the allowed domains", async () => {
+    const res = await api.post<{ error: string }>("/api/auth/register", {
+      email: `person-${Date.now()}@gmail.com`,
+      password: TEST_PASSWORD,
+      name: "Outside Person",
+    });
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, /only open to syr\.edu/i);
+  });
+
+  it("refuses a password that is too weak", async () => {
+    const res = await api.post<{ error: string; problems: string[] }>("/api/auth/register", {
+      email: `weak-${Date.now()}@syr.edu`,
+      password: "Password1!",
+      name: "Weak Password",
+    });
+    assert.equal(res.status, 400);
+    assert.ok(res.body.problems.length > 0);
   });
 });
 
 describe("POST /api/auth/login", () => {
   it("returns a token for correct credentials", async () => {
     const email = `login-${Date.now()}@syr.edu`;
-    await api.post("/api/auth/register", { email, password: "sublet123", name: "Login Student" });
+    await api.post("/api/auth/register", { email, password: TEST_PASSWORD, name: "Login Student" });
 
     const res = await api.post<{ token: string }>("/api/auth/login", {
       email,
-      password: "sublet123",
+      password: TEST_PASSWORD,
     });
     assert.equal(res.status, 200);
     assert.ok(res.body.token);
@@ -100,7 +119,7 @@ describe("POST /api/auth/login", () => {
 
   it("gives the same 401 for a wrong password and an unknown account", async () => {
     const email = `enum-${Date.now()}@syr.edu`;
-    await api.post("/api/auth/register", { email, password: "sublet123", name: "Enum Student" });
+    await api.post("/api/auth/register", { email, password: TEST_PASSWORD, name: "Enum Student" });
 
     const wrongPassword = await api.post<{ error: string }>("/api/auth/login", {
       email,
@@ -172,29 +191,36 @@ describe("POST /api/auth/password", () => {
     const email = `pw-${Date.now()}@syr.edu`;
     const reg = await api.post<{ token: string }>("/api/auth/register", {
       email,
-      password: "sublet123",
+      password: TEST_PASSWORD,
       name: "Password Student",
     });
 
-    const changed = await api.post(
+    const changed = await api.post<{ token: string }>(
       "/api/auth/password",
-      { currentPassword: "sublet123", newPassword: "brand-new-pw" },
+      { currentPassword: TEST_PASSWORD, newPassword: "tucked marble kettle" },
       reg.body.token,
     );
     assert.equal(changed.status, 200);
 
-    assert.equal((await api.post("/api/auth/login", { email, password: "sublet123" })).status, 401);
+    assert.equal((await api.post("/api/auth/login", { email, password: TEST_PASSWORD })).status, 401);
     assert.equal(
-      (await api.post("/api/auth/login", { email, password: "brand-new-pw" })).status,
+      (await api.post("/api/auth/login", { email, password: "tucked marble kettle" })).status,
       200,
     );
+
+    // Changing the password bumps the account's token version, so sessions
+    // that existed beforehand stop working — otherwise a stolen token would
+    // outlive the change meant to revoke it.
+    assert.equal((await api.get("/api/auth/me", reg.body.token)).status, 401);
+    // The caller gets a replacement so they are not signed out by their own change.
+    assert.equal((await api.get("/api/auth/me", changed.body.token)).status, 200);
   });
 
   it("refuses when the current password is wrong", async () => {
     const { token } = await api.registerUser();
     const res = await api.post(
       "/api/auth/password",
-      { currentPassword: "not-it", newPassword: "brand-new-pw" },
+      { currentPassword: "not-it", newPassword: "tucked marble kettle" },
       token,
     );
     assert.equal(res.status, 401);

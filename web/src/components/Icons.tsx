@@ -162,3 +162,19 @@ export const IconLocate = svg(
     <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
   </>,
 );
+
+/**
+ * Microsoft's four-square mark. Drawn rather than pulled from a CDN because
+ * the brand guidelines require the exact colours, and an external image would
+ * be one more thing that can fail to load on the sign-in screen.
+ */
+export function MicrosoftMark({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 23 23" aria-hidden="true" focusable="false">
+      <rect x="1" y="1" width="10" height="10" fill="#F25022" />
+      <rect x="12" y="1" width="10" height="10" fill="#7FBA00" />
+      <rect x="1" y="12" width="10" height="10" fill="#00A4EF" />
+      <rect x="12" y="12" width="10" height="10" fill="#FFB900" />
+    </svg>
+  );
+}

@@ -9,6 +9,19 @@ export type User = {
   rating: number;
   reviewCount: number;
   createdAt: string;
+  /** Whether a password is set — an SSO-only account has none yet. */
+  hasPassword: boolean;
+  /** Whether a Microsoft identity is linked, which is what verifies an account. */
+  linkedToSso: boolean;
+};
+
+/** What the server will accept, so the sign-in screen can render accordingly. */
+export type AuthConfig = {
+  ssoEnabled: boolean;
+  ssoConfigured: boolean;
+  ssoDevMode: boolean;
+  allowedDomains: string[];
+  passwordMinLength: number;
 };
 
 export type Photo = {

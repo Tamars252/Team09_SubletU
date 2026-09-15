@@ -1,0 +1,158 @@
+[
+  {
+    "query": "fwd:1004 lancaster ave, syracuse, ny",
+    "lat": 43.031876,
+    "lng": -76.1229925,
+    "display_name": "1004, Lancaster Avenue, University Neighborhood, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:111 harrison st, syracuse, ny",
+    "lat": 43.0444071,
+    "lng": -76.1519223,
+    "display_name": "111, Harrison Street, Downtown, City of Syracuse, Onondaga County, New York, 13202, United States"
+  },
+  {
+    "query": "fwd:121 maryland ave, syracuse, ny",
+    "lat": 43.0358318,
+    "lng": -76.1202146,
+    "display_name": "Maryland Avenue, Westcott, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:137 redfield pl, syracuse, ny",
+    "lat": 43.0377878,
+    "lng": -76.1217418,
+    "display_name": "135,137, Redfield Place, Westcott, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:200 roosevelt ave, syracuse, ny",
+    "lat": 43.0354067,
+    "lng": -76.1178868,
+    "display_name": "200, Roosevelt Avenue, University Neighborhood, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:205 comstock ave, syracuse, ny",
+    "lat": 43.0448992,
+    "lng": -76.1301973,
+    "display_name": "205, Comstock Avenue, Near Eastside, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:215 ostrom ave, syracuse, ny",
+    "lat": 43.0450449,
+    "lng": -76.1288751,
+    "display_name": "215, Ostrom Avenue, Near Eastside, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:220 clarendon st, syracuse, ny",
+    "lat": 43.0379688,
+    "lng": -76.1267176,
+    "display_name": "220, Clarendon Street, Westcott, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:300 euclid ave, syracuse, ny",
+    "lat": 43.0361199,
+    "lng": -76.1277448,
+    "display_name": "300, Euclid Avenue, Westcott, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:300 university ave, syracuse, ny",
+    "lat": 43.0480151,
+    "lng": -76.1346051,
+    "display_name": "Copper Beech Commons, 300, University Avenue, Near Eastside, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:316 dell st, syracuse, ny",
+    "lat": 43.0418958,
+    "lng": -76.1202628,
+    "display_name": "Dell Street, Westcott, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:415 stratford st, syracuse, ny",
+    "lat": 43.0344092,
+    "lng": -76.1249093,
+    "display_name": "415, Stratford Street, University Neighborhood, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:425 beech st, syracuse, ny",
+    "lat": 43.0462224,
+    "lng": -76.1270702,
+    "display_name": "425, South Beech Street, Near Eastside, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:508 westcott st, syracuse, ny",
+    "lat": 43.0416476,
+    "lng": -76.1196259,
+    "display_name": "Asahi, 508, Westcott Street, Westcott, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:550 livingston ave, syracuse, ny",
+    "lat": 43.0360805,
+    "lng": -76.1268851,
+    "display_name": "Livingston Avenue, Westcott, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:604 walnut ave, syracuse, ny",
+    "lat": 43.0450338,
+    "lng": -76.1323903,
+    "display_name": "Sherbrooke Apartments, 604, Walnut Avenue, Near Eastside, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:621 walnut ave, syracuse, ny",
+    "lat": 43.0443635,
+    "lng": -76.1317755,
+    "display_name": "Washington Arms Residence Hall, 621, Walnut Avenue, Near Eastside, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:720 university ave, syracuse, ny",
+    "lat": 43.0420112,
+    "lng": -76.1350508,
+    "display_name": "720, University Avenue, University Hill, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:727 comstock ave, syracuse, ny",
+    "lat": 43.038141,
+    "lng": -76.1293588,
+    "display_name": "727, Comstock Avenue, University Hill, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:741 ostrom ave, syracuse, ny",
+    "lat": 43.0381982,
+    "lng": -76.1282388,
+    "display_name": "741, Ostrom Avenue, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:750 s crouse ave, syracuse, ny",
+    "lat": 43.04035,
+    "lng": -76.1367505,
+    "display_name": "750, South Crouse Avenue, University Hill, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:812 sumner ave, syracuse, ny",
+    "lat": 43.0360864,
+    "lng": -76.1257342,
+    "display_name": "812, Sumner Avenue, Westcott, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:869 ackerman ave, syracuse, ny",
+    "lat": 43.0345919,
+    "lng": -76.1240306,
+    "display_name": "869, Ackerman Avenue, University Neighborhood, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:910 ackerman ave, syracuse, ny",
+    "lat": 43.0338372,
+    "lng": -76.1243198,
+    "display_name": "910, Ackerman Avenue, University Neighborhood, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:919 e genesee st, syracuse, ny",
+    "lat": 43.0470299,
+    "lng": -76.1369409,
+    "display_name": "Tai Chi Bubble Tea, 919, East Genesee Street, City of Syracuse, Onondaga County, New York, 13210, United States"
+  },
+  {
+    "query": "fwd:999 nowhere st, syracuse, ny",
+    "lat": null,
+    "lng": null,
+    "display_name": null
+  }
+]

@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS users (
   id               TEXT PRIMARY KEY,
   email            TEXT NOT NULL UNIQUE,
   name             TEXT NOT NULL,
-  password_hash    TEXT NOT NULL,
+  -- Nullable: an account created through Microsoft sign-in has no password
+  -- until its owner chooses to set one.
+  password_hash    TEXT,
   university       TEXT NOT NULL DEFAULT 'Syracuse University',
   bio              TEXT NOT NULL DEFAULT '',
   avatar_initials  TEXT NOT NULL DEFAULT '',
@@ -146,6 +148,58 @@ CREATE TABLE IF NOT EXISTS reports (
   created_at  TEXT NOT NULL
 );
 
+-- Short-lived CSRF/PKCE state for an in-flight Microsoft sign-in. Rows are
+-- deleted as soon as they are redeemed, and swept on expiry.
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state         TEXT PRIMARY KEY,
+  code_verifier TEXT NOT NULL,
+  nonce         TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  expires_at    TEXT NOT NULL
+);
+
+-- One-time codes handed to the browser after a successful SSO callback. The
+-- session token is never put in a redirect URL, where it would land in browser
+-- history, logs and Referer headers; the SPA trades this code for it instead.
+CREATE TABLE IF NOT EXISTS sso_handoffs (
+  code_hash  TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at    TEXT
+);
+
+-- The six-digit code that proves someone can read the address they signed up
+-- with. One row per account, replaced on resend, so an old code stops working
+-- the moment a new one is sent.
+CREATE TABLE IF NOT EXISTS email_verification_codes (
+  user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  code_hash  TEXT NOT NULL,
+  email      TEXT NOT NULL,
+  attempts   INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+
+-- Password-reset tokens, stored only as a SHA-256 hash so a database leak
+-- cannot be replayed into account takeover.
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  token_hash TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at    TEXT
+);
+
+-- Failed sign-in attempts, keyed by email and by client address, so both an
+-- account and a source can be throttled.
+CREATE TABLE IF NOT EXISTS auth_attempts (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  scope      TEXT NOT NULL,
+  key        TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS geocache (
   query        TEXT PRIMARY KEY,
   lat          REAL,
@@ -163,7 +217,99 @@ CREATE INDEX IF NOT EXISTS idx_saved_user      ON saved_listings(user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_convo  ON messages(conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_convo_guest     ON conversations(guest_id);
 CREATE INDEX IF NOT EXISTS idx_convo_host      ON conversations(host_id);
+CREATE INDEX IF NOT EXISTS idx_reset_user      ON password_reset_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_attempts_lookup ON auth_attempts(scope, key, created_at);
 `);
+
+/**
+ * Columns added after the first release. SQLite has no "ADD COLUMN IF NOT
+ * EXISTS", so check the table first — this keeps existing databases working
+ * without a migration tool.
+ */
+function addColumn(table: string, column: string, definition: string): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (columns.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+type ColumnInfo = {
+  name: string;
+  type: string;
+  notnull: number;
+  dflt_value: string | null;
+  pk: number;
+};
+
+/**
+ * The first release declared `password_hash TEXT NOT NULL`, which an SSO-only
+ * account cannot satisfy. SQLite has no "ALTER COLUMN", so relaxing it means
+ * rebuilding the table — the procedure documented at sqlite.org/lang_altertable.
+ *
+ * Foreign keys are disabled for the swap because other tables reference
+ * users(id); with enforcement on, dropping the old table would be refused.
+ * Renaming the replacement into place re-points those references.
+ */
+function makePasswordHashNullable(): void {
+  const columns = db.prepare("PRAGMA table_info(users)").all() as ColumnInfo[];
+  const passwordHash = columns.find((c) => c.name === "password_hash");
+  if (!passwordHash || passwordHash.notnull === 0) return;
+
+  const definitions = columns
+    .map((c) => {
+      const pk = c.pk ? " PRIMARY KEY" : "";
+      // Every column keeps its constraints except the one being relaxed.
+      const notNull = c.name === "password_hash" || !c.notnull ? "" : " NOT NULL";
+      const dflt = c.dflt_value !== null ? ` DEFAULT ${c.dflt_value}` : "";
+      return `  ${c.name} ${c.type}${pk}${notNull}${dflt}`;
+    })
+    .join(",\n");
+  const names = columns.map((c) => c.name).join(", ");
+
+  console.log("  migrating users.password_hash to allow SSO-only accounts…");
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.exec("BEGIN");
+  try {
+    db.exec(`CREATE TABLE users_migrating (\n${definitions}\n)`);
+    db.exec(`INSERT INTO users_migrating (${names}) SELECT ${names} FROM users`);
+    db.exec("DROP TABLE users");
+    db.exec("ALTER TABLE users_migrating RENAME TO users");
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    db.exec("PRAGMA foreign_keys = ON");
+    throw err;
+  }
+  db.exec("PRAGMA foreign_keys = ON");
+}
+
+makePasswordHashNullable();
+
+// table_info cannot report the inline UNIQUE the original schema had on email,
+// so the rebuild above would silently drop it. Re-assert it as an index, which
+// is equivalent and survives any future rebuild.
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)");
+
+// Existing rows keep their password; SSO-only accounts have none, so the
+// column has to tolerate NULL from here on.
+addColumn("users", "sso_subject", "TEXT");
+addColumn("users", "sso_tenant", "TEXT");
+// Bumped whenever credentials change. It rides in every session token, so a
+// password reset invalidates tokens that were issued before it.
+addColumn("users", "token_version", "INTEGER NOT NULL DEFAULT 1");
+
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_sso ON users(sso_subject) WHERE sso_subject IS NOT NULL");
+
+/** Clears expired one-time rows. Cheap enough to run on boot and hourly. */
+export function sweepExpired(): void {
+  const now = nowIso();
+  db.prepare("DELETE FROM oauth_states WHERE expires_at < ?").run(now);
+  db.prepare("DELETE FROM sso_handoffs WHERE expires_at < ?").run(now);
+  db.prepare("DELETE FROM password_reset_tokens WHERE expires_at < ?").run(now);
+  db.prepare("DELETE FROM email_verification_codes WHERE expires_at < ?").run(now);
+  db.prepare("DELETE FROM auth_attempts WHERE created_at < ?").run(
+    new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
+  );
+}
 
 export function nowIso(): string {
   return new Date().toISOString();

@@ -118,7 +118,17 @@ export function createApp(): express.Express {
 
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof HttpError) {
-      res.status(err.status).json({ error: err.message, details: err.details ?? undefined });
+      // A list of strings is a set of user-fixable problems — the same shape a
+      // ValidationError returns, so the client has one thing to read.
+      const problems =
+        Array.isArray(err.details) && err.details.every((d) => typeof d === "string")
+          ? (err.details as string[])
+          : undefined;
+      res.status(err.status).json({
+        error: err.message,
+        problems,
+        details: problems ? undefined : (err.details ?? undefined),
+      });
       return;
     }
     if (err instanceof ValidationError) {

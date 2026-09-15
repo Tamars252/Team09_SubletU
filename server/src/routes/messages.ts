@@ -11,7 +11,7 @@ import {
   requireString,
   toBool,
 } from "../lib/http.ts";
-import { currentUser, requireAuth } from "../middleware/auth.ts";
+import { currentUser, requireAuth, requireVerified } from "../middleware/auth.ts";
 
 export const messagesRouter = Router();
 
@@ -44,6 +44,7 @@ function otherParty(row: ConversationRow, userId: string): string {
 /** Start (or reopen) a thread with a listing's host. */
 messagesRouter.post(
   "/conversations",
+  requireVerified,
   asyncHandler(async (req, res) => {
     const user = currentUser(req);
     const body = req.body as Record<string, unknown>;
@@ -186,6 +187,7 @@ messagesRouter.get(
 
 messagesRouter.post(
   "/conversations/:id/messages",
+  requireVerified,
   asyncHandler(async (req, res) => {
     const user = currentUser(req);
     const convo = loadConversation(req.params.id, user.id);

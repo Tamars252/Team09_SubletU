@@ -12,3 +12,8 @@ server/uploads/
 # Visual Paradigm scratch
 *.vpp.bak*
 ~$*
+
+# Playwright
+test-results/
+playwright-report/
+e2e/.tmp/

@@ -13,7 +13,7 @@ import {
   requireString,
   toBool,
 } from "../lib/http.ts";
-import { currentUser, requireAuth } from "../middleware/auth.ts";
+import { currentUser, requireAuth, requireVerified } from "../middleware/auth.ts";
 
 /* ----------------------------------------------------------------- reports */
 
@@ -31,6 +31,7 @@ const REPORT_REASONS = [
 reportsRouter.post(
   "/",
   requireAuth,
+  requireVerified,
   asyncHandler(async (req, res) => {
     const user = currentUser(req);
     const body = req.body as Record<string, unknown>;

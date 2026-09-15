@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api/client.ts";
-import type { Filters, Listing, Reference } from "./api/types.ts";
+import type { Filters, Listing, Reference, User } from "./api/types.ts";
 import { EMPTY_FILTERS } from "./api/types.ts";
 import { useAuth } from "./state/AuthContext.tsx";
 import { AuthScreen } from "./screens/AuthScreen.tsx";
+import { DevSso, ResetPassword, SsoCallback, matchAuthRoute } from "./screens/AuthRoutes.tsx";
+import { VerifyEmail } from "./screens/VerifyEmail.tsx";
 import { Browse } from "./screens/Browse.tsx";
 import { MapScreen } from "./screens/MapScreen.tsx";
 import { Saved } from "./screens/Saved.tsx";
@@ -33,7 +35,10 @@ const TABS: Array<{ key: Tab; label: string; icon: typeof IconCards }> = [
 ];
 
 export function App() {
-  const { user, loading } = useAuth();
+  const { user, loading, setUser } = useAuth();
+  // Read once on mount: these paths are entered by a full page load (a redirect
+  // back from Microsoft, or a link out of an email), never by in-app routing.
+  const [authRoute, setAuthRoute] = useState(() => matchAuthRoute(window.location.pathname));
   const [reference, setReference] = useState<Reference | null>(null);
   const [tab, setTab] = useState<Tab>("browse");
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
@@ -73,8 +78,35 @@ export function App() {
 
   const bumpSaved = useCallback(() => setSavedKey((k) => k + 1), []);
 
+  /**
+   * Finishes an auth route. Clearing the route matters as much as setting the
+   * user: these screens are chosen from the URL at mount, so without this the
+   * callback screen would stay mounted over a signed-in app.
+   */
+  const completeAuth = useCallback(
+    (signedIn: User) => {
+      setUser(signedIn);
+      setAuthRoute(null);
+    },
+    [setUser],
+  );
+
   function openListing(listing: Listing) {
     setDetail(listing);
+  }
+
+  // These own the screen whether or not a session already exists — arriving at
+  // a reset link while signed in still has to let you set a new password.
+  if (authRoute) {
+    return (
+      <div className="app">
+        <div className="app-main">
+          {authRoute === "callback" && <SsoCallback onSignedIn={completeAuth} />}
+          {authRoute === "dev-sso" && <DevSso onSignedIn={completeAuth} />}
+          {authRoute === "reset" && <ResetPassword onSignedIn={completeAuth} />}
+        </div>
+      </div>
+    );
   }
 
   if (loading) {
@@ -91,7 +123,19 @@ export function App() {
     return (
       <div className="app">
         <div className="app-main">
-          <AuthScreen reference={reference} />
+          <AuthScreen />
+        </div>
+      </div>
+    );
+  }
+
+  // Signed in but the address is unconfirmed. Accounts created through
+  // Microsoft arrive verified and never see this.
+  if (!user.verified) {
+    return (
+      <div className="app">
+        <div className="app-main">
+          <VerifyEmail onVerified={setUser} />
         </div>
       </div>
     );

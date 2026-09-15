@@ -17,6 +17,7 @@ export const unauthorized = (message = "Sign in required") => new HttpError(401,
 export const forbidden = (message = "Not allowed") => new HttpError(403, message);
 export const notFound = (message = "Not found") => new HttpError(404, message);
 export const conflict = (message: string) => new HttpError(409, message);
+export const tooManyRequests = (message: string) => new HttpError(429, message);
 
 /** Wraps an async handler so rejected promises reach the error middleware. */
 export function asyncHandler(

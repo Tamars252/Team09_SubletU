@@ -9,26 +9,19 @@ export function newId(prefix: string): string {
 
 /* -------------------------------------------------------------- password */
 
-const SCRYPT_KEYLEN = 64;
-
-export function hashPassword(password: string): string {
-  const salt = crypto.randomBytes(16);
-  const key = crypto.scryptSync(password, salt, SCRYPT_KEYLEN);
-  return `scrypt$${salt.toString("base64url")}$${key.toString("base64url")}`;
-}
-
-export function verifyPassword(password: string, stored: string): boolean {
-  const [scheme, saltB64, keyB64] = stored.split("$");
-  if (scheme !== "scrypt" || !saltB64 || !keyB64) return false;
-  const salt = Buffer.from(saltB64, "base64url");
-  const expected = Buffer.from(keyB64, "base64url");
-  const actual = crypto.scryptSync(password, salt, expected.length);
-  return crypto.timingSafeEqual(expected, actual);
-}
+// Hashing lives in ./passwords.ts, alongside the strength rules and the
+// throttling that guards the same endpoints. Re-exported so existing callers
+// and tests keep working.
+export { hashPassword, verifyPassword, needsRehash } from "./passwords.ts";
 
 /* ------------------------------------------------------------------- jwt */
 
-type JwtPayload = { sub: string; email: string; iat: number; exp: number };
+/**
+ * `tv` is the user's token_version. It is bumped whenever credentials change,
+ * so tokens minted before a password reset stop verifying — without it, a
+ * stolen token would outlive the reset meant to revoke it.
+ */
+type JwtPayload = { sub: string; email: string; tv: number; iat: number; exp: number };
 
 function b64url(input: Buffer | string): string {
   return Buffer.from(input).toString("base64url");
@@ -38,11 +31,11 @@ function sign(data: string): string {
   return crypto.createHmac("sha256", config.jwtSecret).update(data).digest("base64url");
 }
 
-export function issueToken(userId: string, email: string): string {
+export function issueToken(userId: string, email: string, tokenVersion = 1): string {
   const iat = Math.floor(Date.now() / 1000);
   const exp = iat + config.jwtTtlHours * 3600;
   const header = b64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const body = b64url(JSON.stringify({ sub: userId, email, iat, exp }));
+  const body = b64url(JSON.stringify({ sub: userId, email, tv: tokenVersion, iat, exp }));
   return `${header}.${body}.${sign(`${header}.${body}`)}`;
 }
 

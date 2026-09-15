@@ -34,6 +34,7 @@ export function SwipeCard({ listing, interactive, flyOut, onSwiped, onOpen, dept
   const pointerId = useRef<number | null>(null);
   const start = useRef({ x: 0, y: 0, t: 0 });
   const moved = useRef(false);
+  const captured = useRef(false);
 
   const photos = listing.photos;
   const photo = photos[photoIndex]?.fileUrl ?? null;
@@ -51,20 +52,35 @@ export function SwipeCard({ listing, interactive, flyOut, onSwiped, onOpen, dept
 
   function onPointerDown(event: React.PointerEvent) {
     if (!interactive || exiting) return;
-    // Let buttons and photo taps handle their own clicks.
+    // Controls marked [data-no-drag] own the gesture outright. The photo-tap
+    // zones deliberately are not marked: they cover most of the photo, and
+    // blocking drags there left the card swipeable only from a narrow strip
+    // down the middle. They tell a tap from a drag in `step()` instead.
     if ((event.target as HTMLElement).closest("[data-no-drag]")) return;
     pointerId.current = event.pointerId;
     start.current = { x: event.clientX, y: event.clientY, t: Date.now() };
     moved.current = false;
+    captured.current = false;
     setDrag({ x: 0, y: 0, active: true });
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    // Deliberately no setPointerCapture here. Capturing retargets the click
+    // that follows to this card, which would rob the photo-tap buttons of
+    // theirs and turn every tap on the photo into "open the listing".
+    // onPointerMove captures once the gesture is actually a drag.
   }
 
   function onPointerMove(event: React.PointerEvent) {
     if (pointerId.current !== event.pointerId) return;
     const dx = event.clientX - start.current.x;
     const dy = event.clientY - start.current.y;
-    if (Math.abs(dx) > 6 || Math.abs(dy) > 6) moved.current = true;
+    if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
+      moved.current = true;
+      // Now that it is a drag, take the pointer so it keeps tracking even if
+      // it leaves the card. A tap never reaches here, so it keeps its click.
+      if (!captured.current) {
+        (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+        captured.current = true;
+      }
+    }
     setDrag({ x: dx, y: dy, active: true });
   }
 
@@ -95,6 +111,9 @@ export function SwipeCard({ listing, interactive, flyOut, onSwiped, onOpen, dept
 
   function step(delta: number, event: React.MouseEvent) {
     event.stopPropagation();
+    // A drag that happens to finish over a photo-tap zone still fires a click.
+    // Only advance the photo when the pointer actually stayed put.
+    if (moved.current) return;
     setPhotoIndex((i) => Math.min(photos.length - 1, Math.max(0, i + delta)));
   }
 
@@ -161,14 +180,12 @@ export function SwipeCard({ listing, interactive, flyOut, onSwiped, onOpen, dept
             <button
               type="button"
               className="photo-tap left"
-              data-no-drag
               aria-label="Previous photo"
               onClick={(e) => step(-1, e)}
             />
             <button
               type="button"
               className="photo-tap right"
-              data-no-drag
               aria-label="Next photo"
               onClick={(e) => step(1, e)}
             />

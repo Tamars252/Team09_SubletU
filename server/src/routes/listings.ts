@@ -18,7 +18,7 @@ import {
   requireString,
   toBool,
 } from "../lib/http.ts";
-import { currentUser, requireAuth } from "../middleware/auth.ts";
+import { currentUser, requireAuth, requireVerified } from "../middleware/auth.ts";
 
 export const listingsRouter = Router();
 
@@ -208,6 +208,7 @@ listingsRouter.get(
 listingsRouter.post(
   "/",
   requireAuth,
+  requireVerified,
   asyncHandler(async (req, res) => {
     const user = currentUser(req);
     const input = readListingBody(req.body as Record<string, unknown>);

@@ -1,4 +1,5 @@
 import type {
+  AuthConfig,
   Conversation,
   Filters,
   Listing,
@@ -42,11 +43,21 @@ async function request<T>(
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`/api${path}`, {
-    method: options.method ?? "GET",
-    headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`/api${path}`, {
+      method: options.method ?? "GET",
+      headers,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    });
+  } catch (err) {
+    // fetch only rejects when the request never got a reply — the API is down,
+    // the dev proxy has nothing to talk to, or the network dropped. Saying so
+    // is far more useful than a generic failure, which sends people hunting
+    // through their own form for a mistake that isn't there.
+    console.error(`[api] could not reach ${path}:`, err);
+    throw new ApiError(0, "Couldn't reach the SubletU server. It may be offline — try again.");
+  }
 
   if (res.status === 204) return undefined as T;
 
@@ -62,11 +73,14 @@ async function request<T>(
     const data = (payload ?? {}) as { error?: string; problems?: string[] };
     // An expired or revoked token should drop us back to the sign-in screen.
     if (res.status === 401 && token) setToken(null);
-    throw new ApiError(
-      res.status,
-      data.error ?? `Request failed (${res.status})`,
-      data.problems ?? [],
-    );
+    // Every real API error answers with JSON. No JSON at all means something
+    // other than the API replied — usually the dev proxy, with an empty 500,
+    // because nothing is listening behind it.
+    const fallback =
+      payload === null
+        ? `Couldn't reach the SubletU server (${res.status}). It may be offline — try again.`
+        : `Request failed (${res.status})`;
+    throw new ApiError(res.status, data.error ?? fallback, data.problems ?? []);
   }
 
   return payload as T;
@@ -91,8 +105,63 @@ export const api = {
     return request<{ user: User }>("/auth/me", { method: "PATCH", body });
   },
 
-  changePassword(body: { currentPassword: string; newPassword: string }) {
-    return request<{ ok: boolean }>("/auth/password", { method: "POST", body });
+  /** An SSO-only account has no current password, so it may be omitted. */
+  changePassword(body: { currentPassword?: string; newPassword: string }) {
+    return request<{ token: string; user: User }>("/auth/password", { method: "POST", body });
+  },
+
+  /* -------------------------------------------------------- sso and resets */
+
+  authConfig() {
+    return request<AuthConfig>("/auth/config");
+  },
+
+  /** Trades the one-time code from /auth/callback for a session. */
+  ssoExchange(code: string) {
+    return request<{ token: string; user: User }>("/auth/sso/exchange", {
+      method: "POST",
+      body: { code },
+    });
+  },
+
+  /** Dev-mode stand-in for Microsoft; refused unless the server enables it. */
+  ssoDevComplete(body: { email: string; name?: string }) {
+    return request<{ code: string }>("/auth/sso/dev-complete", { method: "POST", body });
+  },
+
+  /** (Re)sends the six-digit code to the signed-in account's address. */
+  sendVerificationCode() {
+    return request<{
+      ok: boolean;
+      email?: string;
+      expiresInMinutes?: number;
+      cooldownSeconds?: number;
+      alreadyVerified?: boolean;
+    }>("/auth/verify/send", { method: "POST", body: {} });
+  },
+
+  verifyEmail(code: string) {
+    return request<{ token: string; user: User }>("/auth/verify", {
+      method: "POST",
+      body: { code },
+    });
+  },
+
+  forgotPassword(email: string) {
+    return request<{ ok: boolean; message: string }>("/auth/forgot", {
+      method: "POST",
+      body: { email },
+    });
+  },
+
+  checkResetToken(token: string) {
+    return request<{ valid: boolean; passwordMinLength: number }>(
+      `/auth/reset/check?token=${encodeURIComponent(token)}`,
+    );
+  },
+
+  resetPassword(body: { token: string; password: string }) {
+    return request<{ token: string; user: User }>("/auth/reset", { method: "POST", body });
   },
 
   /* --------------------------------------------------------------- listings */

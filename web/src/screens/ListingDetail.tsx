@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client.ts";
 import type { Listing } from "../api/types.ts";
 import { LazyMapCanvas } from "../components/LazyMapCanvas.tsx";
@@ -45,6 +45,7 @@ export function ListingDetail({
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [composing, setComposing] = useState(false);
+  const composeRef = useRef<HTMLTextAreaElement>(null);
 
   // Re-fetch so we always show fresh photos/pricing and the true saved state.
   useEffect(() => {
@@ -56,6 +57,18 @@ export function ListingDetail({
       })
       .catch(() => undefined);
   }, [initial.id]);
+
+  // Opening the composer hides the sticky action bar and renders the textarea
+  // at the foot of a long page — well below the fold. Without this the button
+  // just vanishes and the screen looks stuck, so bring the box into view and
+  // put the cursor in it.
+  useEffect(() => {
+    if (!composing) return;
+    const box = composeRef.current;
+    if (!box) return;
+    box.scrollIntoView({ block: "center", behavior: "smooth" });
+    box.focus({ preventScroll: true });
+  }, [composing]);
 
   const pricing = listing.pricing;
   const rooms = listing.roomDetails;
@@ -333,6 +346,7 @@ export function ListingDetail({
           <label className="field">
             <span className="field-label">Message {listing.owner?.name.split(" ")[0]}</span>
             <textarea
+              ref={composeRef}
               className="input"
               rows={4}
               value={message}

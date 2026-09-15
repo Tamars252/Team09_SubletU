@@ -41,6 +41,12 @@ function resolveFromServer(p: string): string {
   return path.isAbsolute(p) ? p : path.resolve(SERVER_ROOT, p);
 }
 
+function bool(key: string, fallback: boolean): boolean {
+  const v = process.env[key];
+  if (v === undefined || v === "") return fallback;
+  return ["1", "true", "yes", "on"].includes(v.toLowerCase());
+}
+
 export const config = {
   port: int("PORT", 4000),
   corsOrigins: str("CORS_ORIGIN", "http://localhost:5173")
@@ -59,10 +65,63 @@ export const config = {
     "SubletU/1.0 (CIS-453 course project)",
   ),
   isProd: process.env.NODE_ENV === "production",
+
+  /** Public origin of the app; reset links and the SSO redirect are built from it. */
+  appUrl: str("APP_URL", `http://localhost:${int("PORT", 4000)}`).replace(/\/$/, ""),
+
+  /* ------------------------------------------------- Microsoft Entra ID (SSO) */
+
+  /**
+   * Syracuse's directory. "organizations" accepts any work/school tenant, which
+   * is only safe because the callback also enforces ssoAllowedDomains — but a
+   * real deployment should pin SU's tenant id so the token is rejected at the
+   * issuer rather than after the fact.
+   */
+  msTenantId: str("MS_TENANT_ID", "organizations"),
+  msClientId: str("MS_CLIENT_ID", ""),
+  msClientSecret: str("MS_CLIENT_SECRET", ""),
+  msRedirectUri: str("MS_REDIRECT_URI", ""),
+
+  /** Only these email domains may create or claim an account through SSO. */
+  ssoAllowedDomains: str("SSO_ALLOWED_DOMAINS", "syr.edu")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
+
+  /**
+   * Stands in for Microsoft when no app registration is available, so the whole
+   * handshake can be exercised locally. Never permitted in production.
+   */
+  ssoDevMode: bool("SSO_DEV_MODE", false),
+
+  /* ------------------------------------------------------------------- email */
+
+  resendApiKey: str("RESEND_API_KEY", ""),
+  mailFrom: str("MAIL_FROM", "SubletU <onboarding@resend.dev>"),
+
+  /* ---------------------------------------------------------------- passwords */
+
+  passwordMinLength: int("PASSWORD_MIN_LENGTH", 12),
+  /** How long a password-reset link stays valid. */
+  resetTokenMinutes: int("RESET_TOKEN_MINUTES", 45),
 };
+
+export const ssoConfigured = Boolean(config.msClientId && config.msClientSecret);
+export const ssoEnabled = ssoConfigured || (config.ssoDevMode && !config.isProd);
+export const mailerConfigured = Boolean(config.resendApiKey);
 
 if (config.isProd && config.jwtSecret === "dev-only-change-me") {
   throw new Error("Refusing to start in production with the default JWT_SECRET.");
+}
+if (config.isProd && config.settingsSecret === "dev-only-change-me-too") {
+  throw new Error("Refusing to start in production with the default SETTINGS_SECRET.");
+}
+if (config.isProd && config.ssoDevMode) {
+  throw new Error("SSO_DEV_MODE bypasses Microsoft sign-in and cannot run in production.");
+}
+if (config.isProd && !mailerConfigured) {
+  // Without a mailer, "forgot password" silently does nothing for real users.
+  throw new Error("Set RESEND_API_KEY in production so password resets can be delivered.");
 }
 
 fs.mkdirSync(path.dirname(config.databaseFile), { recursive: true });
