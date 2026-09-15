@@ -169,6 +169,18 @@ CREATE TABLE IF NOT EXISTS sso_handoffs (
   used_at    TEXT
 );
 
+-- The six-digit code that proves someone can read the address they signed up
+-- with. One row per account, replaced on resend, so an old code stops working
+-- the moment a new one is sent.
+CREATE TABLE IF NOT EXISTS email_verification_codes (
+  user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  code_hash  TEXT NOT NULL,
+  email      TEXT NOT NULL,
+  attempts   INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+
 -- Password-reset tokens, stored only as a SHA-256 hash so a database leak
 -- cannot be replayed into account takeover.
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
@@ -293,6 +305,7 @@ export function sweepExpired(): void {
   db.prepare("DELETE FROM oauth_states WHERE expires_at < ?").run(now);
   db.prepare("DELETE FROM sso_handoffs WHERE expires_at < ?").run(now);
   db.prepare("DELETE FROM password_reset_tokens WHERE expires_at < ?").run(now);
+  db.prepare("DELETE FROM email_verification_codes WHERE expires_at < ?").run(now);
   db.prepare("DELETE FROM auth_attempts WHERE created_at < ?").run(
     new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
   );

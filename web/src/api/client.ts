@@ -116,6 +116,24 @@ export const api = {
     return request<{ code: string }>("/auth/sso/dev-complete", { method: "POST", body });
   },
 
+  /** (Re)sends the six-digit code to the signed-in account's address. */
+  sendVerificationCode() {
+    return request<{
+      ok: boolean;
+      email?: string;
+      expiresInMinutes?: number;
+      cooldownSeconds?: number;
+      alreadyVerified?: boolean;
+    }>("/auth/verify/send", { method: "POST", body: {} });
+  },
+
+  verifyEmail(code: string) {
+    return request<{ token: string; user: User }>("/auth/verify", {
+      method: "POST",
+      body: { code },
+    });
+  },
+
   forgotPassword(email: string) {
     return request<{ ok: boolean; message: string }>("/auth/forgot", {
       method: "POST",

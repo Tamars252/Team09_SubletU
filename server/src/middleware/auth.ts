@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { db } from "../db.ts";
-import { unauthorized } from "../lib/http.ts";
+import { HttpError, unauthorized } from "../lib/http.ts";
 import { verifyToken } from "../lib/crypto.ts";
 
 export type AuthUser = {
@@ -99,6 +99,32 @@ export function attachUser(req: Request, _res: Response, next: NextFunction): vo
 export function requireAuth(req: Request, _res: Response, next: NextFunction): void {
   if (!req.user) {
     next(unauthorized());
+    return;
+  }
+  next();
+}
+
+/**
+ * Rejects anything that would put a user in front of other people — posting a
+ * listing, opening a conversation, filing a report — until the account is
+ * verified. Browsing, swiping and saving are private and stay open, so a new
+ * account can look around while it waits for a code.
+ *
+ * The UI gates on the same flag, but that is a courtesy; this is the check
+ * that actually holds, since the API is reachable without it.
+ */
+export function requireVerified(req: Request, _res: Response, next: NextFunction): void {
+  if (!req.user) {
+    next(unauthorized());
+    return;
+  }
+  if (!req.user.verified) {
+    next(
+      new HttpError(
+        403,
+        "Confirm your school email before you can post or message. Check your inbox for the code.",
+      ),
+    );
     return;
   }
   next();

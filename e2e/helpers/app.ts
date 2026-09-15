@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { expect, test as base, type Locator, type Page } from "@playwright/test";
 
 export const DEMO = { email: "demo@syr.edu", password: "sublet123" };
@@ -92,3 +94,33 @@ export async function openTopCardDetail(page: Page): Promise<string> {
 
 export const test = base;
 export { expect };
+
+/* ---------------------------------------------------------------- mail sink */
+
+/**
+ * Reads what the server "sent". MAIL_LOG_FILE is set for the suite, so every
+ * message lands in e2e/.tmp/mail.jsonl — the only way a browser test can act
+ * on a verification code or a reset link.
+ */
+export function lastMailTo(address: string): { subject: string; text: string } | null {
+  const file = path.join(process.cwd(), "e2e/.tmp/mail.jsonl");
+  if (!fs.existsSync(file)) return null;
+  const lines = fs.readFileSync(file, "utf8").trim().split("\n").filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const mail = JSON.parse(lines[i]) as { to: string; subject: string; text: string };
+    if (mail.to.toLowerCase() === address.toLowerCase()) return mail;
+  }
+  return null;
+}
+
+/** Pulls the six-digit code out of the most recent message to an address. */
+export async function verificationCodeFor(address: string): Promise<string> {
+  // The send happens during the registration request, so poll briefly.
+  for (let i = 0; i < 40; i += 1) {
+    const mail = lastMailTo(address);
+    const match = mail?.text.match(/(\d{3})\s?(\d{3})/);
+    if (match) return `${match[1]}${match[2]}`;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`No verification code was emailed to ${address}`);
+}

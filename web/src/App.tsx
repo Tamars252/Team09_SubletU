@@ -5,6 +5,7 @@ import { EMPTY_FILTERS } from "./api/types.ts";
 import { useAuth } from "./state/AuthContext.tsx";
 import { AuthScreen } from "./screens/AuthScreen.tsx";
 import { DevSso, ResetPassword, SsoCallback, matchAuthRoute } from "./screens/AuthRoutes.tsx";
+import { VerifyEmail } from "./screens/VerifyEmail.tsx";
 import { Browse } from "./screens/Browse.tsx";
 import { MapScreen } from "./screens/MapScreen.tsx";
 import { Saved } from "./screens/Saved.tsx";
@@ -123,6 +124,18 @@ export function App() {
       <div className="app">
         <div className="app-main">
           <AuthScreen />
+        </div>
+      </div>
+    );
+  }
+
+  // Signed in but the address is unconfirmed. Accounts created through
+  // Microsoft arrive verified and never see this.
+  if (!user.verified) {
+    return (
+      <div className="app">
+        <div className="app-main">
+          <VerifyEmail onVerified={setUser} />
         </div>
       </div>
     );

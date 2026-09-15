@@ -1,4 +1,4 @@
-import { DEMO, app, expect, signIn, test } from "../helpers/app.ts";
+import { DEMO, app, expect, signIn, test, verificationCodeFor } from "../helpers/app.ts";
 
 /**
  * These walk the real screens rather than planting a token, because the screens
@@ -98,21 +98,22 @@ test.describe("creating an account with a password", () => {
     await expect(page.locator(".strength-label")).toHaveText(/good|strong/i);
   });
 
-  test("accepts a long passphrase and signs in", async ({ page }) => {
+  test("accepts a long passphrase and asks to confirm the address", async ({ page }) => {
     await page.locator('input[autocomplete="name"]').fill("New Student");
     await page.locator('input[type="email"]').fill(`new-${Date.now()}@syr.edu`);
     await page.locator('input[type="password"]').fill("vaulted anchor lantern moth");
     await page.getByRole("button", { name: "Create account", exact: true }).click();
 
-    await expect(app.topCard(page)).toBeVisible();
+    await expect(page.locator(".auth-heading")).toHaveText(/confirm your school email/i);
+    await expect(app.topCard(page)).toHaveCount(0);
   });
 
-  test("a password account is not verified — only SSO proves the address", async ({ page }) => {
+  test("a new password account is not verified until the code is entered", async ({ page }) => {
     await page.locator('input[autocomplete="name"]').fill("Unverified Student");
     await page.locator('input[type="email"]').fill(`unverified-${Date.now()}@syr.edu`);
     await page.locator('input[type="password"]').fill("vaulted anchor lantern moth");
     await page.getByRole("button", { name: "Create account", exact: true }).click();
-    await expect(app.topCard(page)).toBeVisible();
+    await expect(page.locator(".code-input")).toBeVisible();
 
     const me = await page.request.get("/api/auth/me", {
       headers: {
@@ -188,7 +189,7 @@ test.describe("Microsoft sign-in", () => {
     await page.locator('input[type="email"]').fill(email);
     await page.locator('input[type="password"]').fill("vaulted anchor lantern moth");
     await page.getByRole("button", { name: "Create account", exact: true }).click();
-    await expect(app.topCard(page)).toBeVisible();
+    await expect(page.locator(".code-input")).toBeVisible();
     const firstId = await page.evaluate(async () => {
       const r = await fetch("/api/auth/me", {
         headers: { Authorization: `Bearer ${localStorage.getItem("subletu.token")}` },
@@ -287,5 +288,120 @@ test.describe("session persistence", () => {
   test("a signed-out visitor cannot see the deck", async ({ page }) => {
     await page.goto("/");
     await expect(app.topCard(page)).toHaveCount(0);
+  });
+});
+
+/**
+ * Email verification is the fallback for not having a Microsoft app
+ * registration. It proves control of the mailbox, which is a weaker claim than
+ * SSO — it says nothing about current enrolment — but it is what stops anyone
+ * with a personal address from posing as a student.
+ */
+test.describe("confirming a school email", () => {
+  async function registerFresh(page: import("@playwright/test").Page) {
+    const email = `confirm-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@syr.edu`;
+    await page.goto("/");
+    await page.getByRole("tab", { name: "Create account" }).click();
+    await page.locator('input[autocomplete="name"]').fill("Confirm Student");
+    await page.locator('input[type="email"]').fill(email);
+    await page.locator('input[type="password"]').fill("vaulted anchor lantern moth");
+    await page.getByRole("button", { name: "Create account", exact: true }).click();
+    await expect(page.locator(".code-input")).toBeVisible();
+    return email;
+  }
+
+  test("the gate names the address the code went to", async ({ page }) => {
+    const email = await registerFresh(page);
+    await expect(page.locator(".auth-card")).toContainText(email);
+  });
+
+  test("the right code unlocks the app", async ({ page }) => {
+    const email = await registerFresh(page);
+    const code = await verificationCodeFor(email);
+
+    // Six digits is a fixed length, so the form submits on the last one.
+    await page.locator(".code-input").fill(code);
+    await expect(app.topCard(page)).toBeVisible();
+
+    const token = await page.evaluate(() => localStorage.getItem("subletu.token"));
+    const me = await page.request.get("/api/auth/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(((await me.json()) as { user: { verified: boolean } }).user.verified).toBe(true);
+  });
+
+  test("a wrong code says how many attempts are left", async ({ page }) => {
+    const email = await registerFresh(page);
+    const real = await verificationCodeFor(email);
+    const wrong = real === "000000" ? "111111" : "000000";
+
+    await page.locator(".code-input").fill(wrong);
+    await expect(page.locator(".banner.error")).toContainText(/attempts left/i);
+    await expect(app.topCard(page)).toHaveCount(0);
+  });
+
+  test("the code is burned after five wrong guesses", async ({ page }) => {
+    const email = await registerFresh(page);
+    const real = await verificationCodeFor(email);
+    const wrong = real === "000000" ? "111111" : "000000";
+
+    for (let i = 0; i < 5; i += 1) {
+      await page.locator(".code-input").fill(wrong);
+      await expect(page.locator(".banner.error")).toBeVisible();
+    }
+    await expect(page.locator(".banner.error")).toContainText(/too many wrong codes/i);
+
+    // Even the real code is dead now — the limit is what makes six digits safe.
+    await page.locator(".code-input").fill(real);
+    await expect(page.locator(".banner.error")).toBeVisible();
+    await expect(app.topCard(page)).toHaveCount(0);
+  });
+
+  test("resend is on a cooldown", async ({ page }) => {
+    await registerFresh(page);
+    await expect(page.getByRole("button", { name: /Resend code in \d+s/ })).toBeDisabled();
+  });
+
+  test("an unverified account cannot post or message, over the API", async ({ page }) => {
+    // The screen gates too, but this is the check that actually holds — the
+    // API is reachable without the UI.
+    await registerFresh(page);
+    const token = await page.evaluate(() => localStorage.getItem("subletu.token"));
+    const auth = { Authorization: `Bearer ${token}` };
+
+    const listing = await page.request.post("/api/listings", { headers: auth, data: {} });
+    expect(listing.status()).toBe(403);
+
+    const convo = await page.request.post("/api/messages/conversations", {
+      headers: auth,
+      data: { listingId: "lst_whatever", body: "hello" },
+    });
+    expect(convo.status()).toBe(403);
+
+    // Browsing stays open, so a new account can look around while it waits.
+    const deck = await page.request.get("/api/listings/deck", { headers: auth });
+    expect(deck.status()).toBe(200);
+  });
+
+  test("signing out and back in returns to the gate, not the app", async ({ page }) => {
+    const email = await registerFresh(page);
+    await page.getByRole("button", { name: "Use a different account" }).click();
+    await expect(page.getByRole("link", { name: /Continue with Syracuse/ })).toBeVisible();
+
+    await page.locator('input[type="email"]').fill(email);
+    await page.locator('input[type="password"]').fill("vaulted anchor lantern moth");
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+
+    await expect(page.locator(".code-input")).toBeVisible();
+    await expect(app.topCard(page)).toHaveCount(0);
+  });
+
+  test("Microsoft sign-in skips the gate entirely", async ({ page }) => {
+    await page.goto("/auth/dev-sso");
+    await page.locator('input[type="email"]').fill(`skip-${Date.now()}@syr.edu`);
+    await page.getByRole("button", { name: "Continue" }).click();
+
+    await expect(app.topCard(page)).toBeVisible();
+    await expect(page.locator(".code-input")).toHaveCount(0);
   });
 });

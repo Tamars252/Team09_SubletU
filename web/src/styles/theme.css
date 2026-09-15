@@ -1814,3 +1814,16 @@ input[type="range"]::-webkit-slider-thumb {
   min-width: 96px;
   text-align: right;
 }
+
+.code-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 12px;
+  text-align: center;
+  padding-left: 12px;
+}
+.code-input::placeholder {
+  color: var(--line-strong);
+  letter-spacing: 12px;
+}

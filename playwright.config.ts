@@ -89,6 +89,9 @@ export default defineConfig({
       // takes; only the identity provider itself is substituted.
       SSO_DEV_MODE: "true",
       SSO_ALLOWED_DOMAINS: "syr.edu",
+      // Lets the suite read verification codes and reset links, which
+      // otherwise only exist inside an email.
+      MAIL_LOG_FILE: path.join(ROOT, "e2e/.tmp/mail.jsonl"),
     },
   },
 });

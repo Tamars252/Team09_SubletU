@@ -14,7 +14,13 @@ import {
   tooManyRequests,
   unauthorized,
 } from "../lib/http.ts";
-import { passwordResetEmail, sendMail } from "../lib/mailer.ts";
+import { passwordResetEmail, sendMail, verificationEmail } from "../lib/mailer.ts";
+import {
+  issueCode,
+  verificationLimits,
+  verifyCode,
+  type SendOutcome,
+} from "../lib/verification.ts";
 import {
   assertAllowedDomain,
   beginSignIn,
@@ -78,6 +84,7 @@ authRouter.get("/config", (_req, res) => {
     ssoDevMode: ssoEnabled && !ssoConfigured,
     allowedDomains: config.ssoAllowedDomains,
     passwordMinLength: config.passwordMinLength,
+    verificationCooldownSeconds: verificationLimits.resendCooldownSeconds,
   });
 });
 
@@ -249,12 +256,85 @@ authRouter.post(
     ).run(id, email, name, hashPassword(password), university, bio, initialsFor(name), nowIso());
 
     // Deliberately not verified. A matching domain only proves the address was
-    // typed correctly; signing in through Microsoft is what proves it is theirs.
+    // typed correctly. Reading the code sent to it is what proves it is theirs.
     const settings = new ScreenSettings(id);
     settings.payload.university = university;
     settings.storeData();
 
+    await deliverCode(id, email, name);
+
     res.status(201).json(sessionFor(id));
+  }),
+);
+
+/* ----------------------------------------------------- email verification */
+
+/** Issues a code and emails it. Silent on a cooldown — the caller decides. */
+async function deliverCode(userId: string, email: string, name: string): Promise<SendOutcome> {
+  const outcome = issueCode(userId, email);
+  if (!outcome.ok) return outcome;
+  try {
+    const mail = verificationEmail(name, outcome.code, outcome.expiresInMinutes);
+    await sendMail({ ...mail, to: email });
+  } catch (err) {
+    console.error("[auth] could not send verification email:", (err as Error).message);
+  }
+  return outcome;
+}
+
+authRouter.post(
+  "/verify/send",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const user = currentUser(req);
+    if (user.verified) {
+      res.json({ ok: true, alreadyVerified: true });
+      return;
+    }
+
+    const outcome = await deliverCode(user.id, user.email, user.name);
+    if (!outcome.ok) {
+      throw tooManyRequests(
+        `Wait ${outcome.retryAfterSeconds} seconds before asking for another code.`,
+      );
+    }
+    res.json({
+      ok: true,
+      email: user.email,
+      expiresInMinutes: outcome.expiresInMinutes,
+      cooldownSeconds: verificationLimits.resendCooldownSeconds,
+    });
+  }),
+);
+
+authRouter.post(
+  "/verify",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const user = currentUser(req);
+    if (user.verified) {
+      res.json(sessionFor(user.id));
+      return;
+    }
+
+    const code = requireString(req.body as Record<string, unknown>, "code", { min: 4, max: 12 });
+    const outcome = verifyCode(user.id, code.replace(/\s+/g, ""));
+
+    if (!outcome.ok) {
+      if (outcome.reason === "locked") {
+        throw badRequest("Too many wrong codes. Ask for a new one.");
+      }
+      if (outcome.reason === "expired") {
+        throw badRequest("That code has expired. Ask for a new one.");
+      }
+      throw badRequest(
+        outcome.attemptsLeft === 1
+          ? "That code is not right. One attempt left before it is cancelled."
+          : `That code is not right. ${outcome.attemptsLeft} attempts left.`,
+      );
+    }
+
+    res.json(sessionFor(user.id));
   }),
 );
 

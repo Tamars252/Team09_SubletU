@@ -7,11 +7,31 @@
  * refuses to boot in production without a key, so a real deployment can never
  * quietly swallow a password reset.
  */
+import fs from "node:fs";
 import { config, mailerConfigured } from "../config.ts";
 
 export type Mail = { to: string; subject: string; text: string; html: string };
 
+/**
+ * When MAIL_LOG_FILE is set, every message is also appended there as JSON.
+ * The end-to-end suite reads it to pick up verification codes and reset links,
+ * which is the only way a browser test can act on something that leaves by
+ * email. It does nothing unless a path is configured, and production requires
+ * a real mailer regardless.
+ */
+function recordToSink(mail: Mail): void {
+  const path = process.env.MAIL_LOG_FILE;
+  if (!path) return;
+  try {
+    fs.appendFileSync(path, `${JSON.stringify({ ...mail, at: new Date().toISOString() })}\n`);
+  } catch (err) {
+    console.warn("[mail] could not write to MAIL_LOG_FILE:", (err as Error).message);
+  }
+}
+
 export async function sendMail(mail: Mail): Promise<void> {
+  recordToSink(mail);
+
   if (!mailerConfigured) {
     console.log(
       [
@@ -55,6 +75,39 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string,
   );
+}
+
+export function verificationEmail(name: string, code: string, minutes: number): Mail {
+  const greeting = name ? `Hi ${name},` : "Hi,";
+  const spaced = `${code.slice(0, 3)} ${code.slice(3)}`;
+  const text = [
+    greeting,
+    "",
+    "Your SubletU verification code is:",
+    "",
+    `    ${spaced}`,
+    "",
+    `It expires in ${minutes} minutes.`,
+    "If you didn't try to create a SubletU account, you can ignore this email.",
+    "",
+    "— SubletU",
+  ].join("\n");
+
+  const html = `
+    <div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#2B2724">
+      <h1 style="font-size:20px;margin:0 0 16px">Confirm your Syracuse email</h1>
+      <p style="margin:0 0 12px">${escapeHtml(greeting)}</p>
+      <p style="margin:0 0 18px">Enter this code in SubletU to finish setting up your account:</p>
+      <p style="margin:0 0 22px;font-size:34px;font-weight:700;letter-spacing:9px;color:#D4603A">
+        ${escapeHtml(spaced)}
+      </p>
+      <p style="margin:0 0 8px;font-size:13px;color:#6B625C">It expires in ${minutes} minutes.</p>
+      <p style="margin:0;font-size:13px;color:#6B625C">
+        If you didn't try to create a SubletU account, you can ignore this email.
+      </p>
+    </div>`;
+
+  return { to: "", subject: `${spaced} is your SubletU code`, text, html };
 }
 
 export function passwordResetEmail(name: string, link: string, minutes: number): Mail {
