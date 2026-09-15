@@ -43,11 +43,21 @@ async function request<T>(
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`/api${path}`, {
-    method: options.method ?? "GET",
-    headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`/api${path}`, {
+      method: options.method ?? "GET",
+      headers,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    });
+  } catch (err) {
+    // fetch only rejects when the request never got a reply — the API is down,
+    // the dev proxy has nothing to talk to, or the network dropped. Saying so
+    // is far more useful than a generic failure, which sends people hunting
+    // through their own form for a mistake that isn't there.
+    console.error(`[api] could not reach ${path}:`, err);
+    throw new ApiError(0, "Couldn't reach the SubletU server. It may be offline — try again.");
+  }
 
   if (res.status === 204) return undefined as T;
 
@@ -63,11 +73,14 @@ async function request<T>(
     const data = (payload ?? {}) as { error?: string; problems?: string[] };
     // An expired or revoked token should drop us back to the sign-in screen.
     if (res.status === 401 && token) setToken(null);
-    throw new ApiError(
-      res.status,
-      data.error ?? `Request failed (${res.status})`,
-      data.problems ?? [],
-    );
+    // Every real API error answers with JSON. No JSON at all means something
+    // other than the API replied — usually the dev proxy, with an empty 500,
+    // because nothing is listening behind it.
+    const fallback =
+      payload === null
+        ? `Couldn't reach the SubletU server (${res.status}). It may be offline — try again.`
+        : `Request failed (${res.status})`;
+    throw new ApiError(res.status, data.error ?? fallback, data.problems ?? []);
   }
 
   return payload as T;
