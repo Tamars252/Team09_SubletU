@@ -112,12 +112,34 @@ const problems = makePricing({ monthlyRent: 0 }).validateData();
 Prefer that over constructing objects by hand — it keeps each assertion about
 one rule instead of a pile of unrelated setup.
 
+### HTTP tests
+
+`test/api/` boots the real Express app on a random port and makes real requests
+through it, so the auth middleware, JSON parsing and error mapping are all
+exercised rather than stubbed.
+
+```ts
+const api = await TestApi.start();
+const { token } = await api.registerUser();
+const res = await api.post("/api/swipes", { listingId, direction: "right" }, token);
+```
+
+`src/app.ts` builds the app and `src/index.ts` starts it — keep that split.
+Anything that binds a port at import time makes the app untestable.
+
+Posting a listing geocodes its address, so call `seedDefaultGeocodes()` in your
+`before` hook. That pre-fills the `geocache` table, and `geocodeAddress` reads
+the cache before it ever reaches the network.
+
 ### What is not covered yet
 
-- **No HTTP-level tests.** The routes in `server/src/routes/` are only tested
-  through the domain classes they call. Integration tests that boot the app and
-  hit real endpoints are the next thing worth adding.
+- **Messages and reports have no HTTP tests.** `test/api/` covers auth, listings
+  and the swipe/save invariant. Conversations, archiving and reports do not.
 - **No front-end tests.** `web/` has typecheck and build in CI, nothing more.
 - **Nothing hits Nominatim.** `test/helpers/env.ts` points `NOMINATIM_URL` at a
   dead address on purpose, so a test can never make a live geocoding request. If
-  you need to test geocoding behaviour, stub `fetch`.
+  you need to test geocoding behaviour, stub `fetch` or seed the cache.
+- **Two tests are marked `todo`** in `test/api/swipeSaved.test.ts`. They describe
+  behaviour the README promises but the code does not have yet — see the comment
+  above them. `node:test` reports todo failures without failing the run, so they
+  stay visible without blocking CI. Delete the `todo` marker when the fix lands.
