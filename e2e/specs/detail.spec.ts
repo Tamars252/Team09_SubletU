@@ -21,7 +21,12 @@ test.describe("listing detail", () => {
       metrics.clientHeight,
     );
 
-    await page.mouse.move(200, 400);
+    // Scroll over the app itself. Past the 900px breakpoint it is a centred
+    // panel, so fixed coordinates can land on the shell behind it and scroll
+    // nothing at all.
+    const box = await scroller.boundingBox();
+    if (!box) throw new Error("scroller has no bounding box");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.wheel(0, 600);
     await expect
       .poll(async () => scroller.evaluate((el) => el.scrollTop))

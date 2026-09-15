@@ -50,3 +50,46 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    # Browser download and two viewports take longer than the other jobs, but
+    # this is the only one that exercises the app the way a person does.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      # Keyed on the Playwright version, so a version bump fetches a matching
+      # browser instead of reusing a stale one.
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: browser-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - name: Install Chromium
+        # --with-deps is still needed on a cache hit: the system libraries it
+        # installs live outside the cached browser directory.
+        run: npx playwright install --with-deps chromium
+
+      # The suite builds the front end and seeds its own throwaway database;
+      # see playwright.config.ts.
+      - run: npx playwright test
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
