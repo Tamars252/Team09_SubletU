@@ -172,6 +172,7 @@
       const [cardCVV, setCardCVV]         = useState('');
       const [cardName, setCardName]       = useState('');
       const [paymentError, setPaymentError] = useState('');
+      const [submitting, setSubmitting]     = useState(false);
 
       // Order / tracking
       const [orderDetails, setOrderDetails]   = useState(null);
@@ -210,6 +211,18 @@
         const t = setTimeout(() => setOrderStatusIdx(i => i + 1), 7000);
         return () => clearTimeout(t);
       }, [view, orderStatusIdx]);
+
+      // Mirror the tracker's status to the server for orders it actually knows about
+      useEffect(() => {
+        if (!backendAvailable || !orderDetails?.persisted) return;
+        const status = ORDER_STATUSES[orderStatusIdx]?.key;
+        if (!status) return;
+        fetch(`${API_URL}/orders/${orderDetails.id}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status }),
+        }).catch(() => {}); // tracking display is cosmetic - never block the UI on this
+      }, [orderStatusIdx, orderDetails, backendAvailable]);
 
       // Scroll chat to bottom
       useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
@@ -351,29 +364,49 @@ const handleSearch = useCallback(async (q) => {
       const cartCount = cart.reduce((s,i) => s + i.quantity, 0);
 
       // ── Payment ────────────────────────────────────────────────────────────
-      const processPayment = () => {
+      const processPayment = async () => {
+        if (submitting) return;
         setPaymentError('');
         const clean = cardNumber.replace(/\s/g,'');
         if (clean.length < 16) { setPaymentError('Enter a valid 16-digit card number.'); return; }
         if (!cardExpiry.match(/^\d{2}\/\d{2}$/)) { setPaymentError('Enter expiry as MM/YY.'); return; }
         if (cardCVV.length < 3) { setPaymentError('Enter a valid CVV.'); return; }
         if (!cardName.trim()) { setPaymentError('Enter the name on your card.'); return; }
-        finalizeOrder();
+        setSubmitting(true);
+        try { await finalizeOrder(); }
+        finally { setSubmitting(false); }
       };
 
-      const finalizeOrder = () => {
+      const finalizeOrder = async () => {
         const courier = MOCK_COURIERS[Math.floor(Math.random() * MOCK_COURIERS.length)];
-        setAssignedCourier(courier);
         const txId = 'QB-' + Math.floor(Math.random()*90000+10000);
-        const payload = {
-          id: Math.floor(Math.random()*9000)+1000,
+        const body = {
           restaurantId: selectedRestaurant.id,
           items: cart,
           deliveryAddress, customerName, customerPhone,
           subtotal: subtotal(), deliveryFee: selectedRestaurant.deliveryFee, total: total(),
+        };
+        // Offline fallback: a locally minted order, used when the backend is unreachable.
+        let payload = {
+          ...body,
+          id: Math.floor(Math.random()*9000)+1000,
           status: 'pending', transactionId: txId,
           createdAt: new Date().toISOString(),
+          persisted: false,
         };
+        if (backendAvailable) {
+          try {
+            const res = await fetch(`${API_URL}/orders`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            if (!res.ok) throw new Error(`Order failed: ${res.status}`);
+            // The server owns id / createdAt / estimatedDelivery; transactionId is client-only.
+            payload = { ...(await res.json()), transactionId: txId, persisted: true };
+          } catch (e) { console.error(e); }
+        }
+        setAssignedCourier(courier);
         setOrderDetails(payload);
         setOrderStatusIdx(0);
         setChatMessages([{ from: 'bot', text: `Hi ${customerName.split(' ')[0]}! I'm ${courier.name}, your delivery courier. I'll keep you updated! 😊` }]);
@@ -655,8 +688,9 @@ const handleSearch = useCallback(async (q) => {
                   <div className="border-t-2 border-gray-700 pt-4 flex justify-between text-2xl font-bold">
                     <span>Total</span><span className="text-[#ff6b35]">${total().toFixed(2)}</span>
                   </div>
-                  <button onClick={processPayment} className="w-full btn-primary text-white font-bold py-5 text-xl">
-                    PAY ${total().toFixed(2)}
+                  <button onClick={processPayment} disabled={submitting}
+                    className="w-full btn-primary text-white font-bold py-5 text-xl disabled:opacity-60 disabled:cursor-not-allowed">
+                    {submitting ? 'PROCESSING…' : 'PAY $' + total().toFixed(2)}
                   </button>
                   <p className="text-center text-gray-600 text-xs">🔒 This is a demo — no real payment is processed.</p>
                 </div>
