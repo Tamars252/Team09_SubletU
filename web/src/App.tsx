@@ -19,7 +19,6 @@ import {
   IconChat,
   IconHeart,
   IconMap,
-  IconPlus,
   IconUser,
 } from "./components/Icons.tsx";
 
@@ -28,7 +27,6 @@ type Tab = "browse" | "map" | "post" | "saved" | "messages" | "settings";
 const TABS: Array<{ key: Tab; label: string; icon: typeof IconCards }> = [
   { key: "browse", label: "Browse", icon: IconCards },
   { key: "map", label: "Map", icon: IconMap },
-  { key: "post", label: "Post", icon: IconPlus },
   { key: "saved", label: "Saved", icon: IconHeart },
   { key: "messages", label: "Messages", icon: IconChat },
   { key: "settings", label: "Profile", icon: IconUser },
@@ -173,6 +171,7 @@ export function App() {
                 onOpenListing={openListing}
                 onReport={setReporting}
                 onSavedChange={bumpSaved}
+                onOpenPost={() => setTab("post")}
               />
             </div>
           )}

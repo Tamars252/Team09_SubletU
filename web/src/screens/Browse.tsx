@@ -7,6 +7,7 @@ import type { SwipeDirection } from "../components/SwipeCard.tsx";
 import { FilterSheet } from "../components/FilterSheet.tsx";
 import {
   IconHeart,
+  IconPlus,
   IconRewind,
   IconSliders,
   IconX,
@@ -20,6 +21,7 @@ type Props = {
   onOpenListing: (listing: Listing) => void;
   onReport: (listing: Listing) => void;
   onSavedChange: () => void;
+  onOpenPost: () => void;
 };
 
 const PREFETCH_BELOW = 4;
@@ -31,6 +33,7 @@ export function Browse({
   onOpenListing,
   onReport,
   onSavedChange,
+  onOpenPost,
 }: Props) {
   const [deck, setDeck] = useState<Listing[]>([]);
   const [remaining, setRemaining] = useState(0);
@@ -156,6 +159,9 @@ export function Browse({
           Sublet<span>U</span>
         </div>
         <div className="header-actions">
+          <button type="button" className="icon-btn" onClick={onOpenPost} aria-label="Post a listing">
+            <IconPlus size={19} />
+          </button>
           <button
             type="button"
             className={`icon-btn${filterCount > 0 ? " active" : ""}`}

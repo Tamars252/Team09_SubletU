@@ -1119,6 +1119,7 @@ textarea.input {
   left: 0;
   right: 0;
   max-height: 88%;
+  z-index: 61;
   display: flex;
   flex-direction: column;
   background: var(--cream);
