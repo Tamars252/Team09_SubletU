@@ -156,6 +156,7 @@
       const [menuData, setMenuData]             = useState(null);
       const [searchQuery, setSearchQuery]       = useState('');
       const [loading, setLoading]               = useState(false);
+      const [menuError, setMenuError]           = useState('');
       const [backendAvailable, setBackendAvailable] = useState(null);
 
       // Cart
@@ -172,7 +173,6 @@
       const [cardCVV, setCardCVV]         = useState('');
       const [cardName, setCardName]       = useState('');
       const [paymentError, setPaymentError] = useState('');
-      const [submitting, setSubmitting]     = useState(false);
 
       // Order / tracking
       const [orderDetails, setOrderDetails]   = useState(null);
@@ -211,18 +211,6 @@
         const t = setTimeout(() => setOrderStatusIdx(i => i + 1), 7000);
         return () => clearTimeout(t);
       }, [view, orderStatusIdx]);
-
-      // Mirror the tracker's status to the server for orders it actually knows about
-      useEffect(() => {
-        if (!backendAvailable || !orderDetails?.persisted) return;
-        const status = ORDER_STATUSES[orderStatusIdx]?.key;
-        if (!status) return;
-        fetch(`${API_URL}/orders/${orderDetails.id}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status }),
-        }).catch(() => {}); // tracking display is cosmetic - never block the UI on this
-      }, [orderStatusIdx, orderDetails, backendAvailable]);
 
       // Scroll chat to bottom
       useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
@@ -332,20 +320,47 @@ const handleSearch = useCallback(async (q) => {
 }, [backendAvailable, allRestaurants]);
 
       // ── Menu ───────────────────────────────────────────────────────────────
+      // Fetch into local variables first and only touch state once the data is
+      // known to be good. On any failure the user stays on the home page with a
+      // message, and selectedRestaurant keeps its old value (the cart's delivery
+      // fee and checkout depend on it).
       const loadMenu = async (id) => {
+        setMenuError('');
         setLoading(true);
         try {
+          let restaurant, menu;
+
           if (backendAvailable) {
             const res = await fetch(`${API_URL}/restaurants/${id}/menu`);
-            const d = await res.json();
-            setSelectedRestaurant(d.restaurant); setMenuData(d.menu);
+            if (!res.ok) {
+              setMenuError(res.status === 404
+                ? "This restaurant isn't available anymore. Pick another one below."
+                : `The menu didn't load (server error ${res.status}). Try again in a moment.`);
+              return;
+            }
+            const data = await res.json();
+            restaurant = data.restaurant;
+            menu = data.menu;
           } else {
-            setSelectedRestaurant(MOCK_RESTAURANTS.find(r => r.id === id));
-            setMenuData(MOCK_MENUS[id] || []);
+            restaurant = MOCK_RESTAURANTS.find(r => r.id === id);
+            menu = MOCK_MENUS[id] || [];
           }
+
+          if (!restaurant || !Array.isArray(menu)) {
+            setMenuError("The menu didn't load. Try again in a moment.");
+            return;
+          }
+
+          setSelectedRestaurant(restaurant);
+          setMenuData(menu);
           setView('menu');
-        } catch(e) { console.error(e); }
-        finally { setLoading(false); }
+        } catch (e) {
+          // fetch() rejected (server down, network lost) or the body wasn't JSON
+          console.error('loadMenu failed:', e);
+          setMenuError("The menu didn't load. Check your connection and try again.");
+        } finally {
+          setLoading(false);
+        }
       };
 
       // ── Cart ───────────────────────────────────────────────────────────────
@@ -364,49 +379,29 @@ const handleSearch = useCallback(async (q) => {
       const cartCount = cart.reduce((s,i) => s + i.quantity, 0);
 
       // ── Payment ────────────────────────────────────────────────────────────
-      const processPayment = async () => {
-        if (submitting) return;
+      const processPayment = () => {
         setPaymentError('');
         const clean = cardNumber.replace(/\s/g,'');
         if (clean.length < 16) { setPaymentError('Enter a valid 16-digit card number.'); return; }
         if (!cardExpiry.match(/^\d{2}\/\d{2}$/)) { setPaymentError('Enter expiry as MM/YY.'); return; }
         if (cardCVV.length < 3) { setPaymentError('Enter a valid CVV.'); return; }
         if (!cardName.trim()) { setPaymentError('Enter the name on your card.'); return; }
-        setSubmitting(true);
-        try { await finalizeOrder(); }
-        finally { setSubmitting(false); }
+        finalizeOrder();
       };
 
-      const finalizeOrder = async () => {
+      const finalizeOrder = () => {
         const courier = MOCK_COURIERS[Math.floor(Math.random() * MOCK_COURIERS.length)];
+        setAssignedCourier(courier);
         const txId = 'QB-' + Math.floor(Math.random()*90000+10000);
-        const body = {
+        const payload = {
+          id: Math.floor(Math.random()*9000)+1000,
           restaurantId: selectedRestaurant.id,
           items: cart,
           deliveryAddress, customerName, customerPhone,
           subtotal: subtotal(), deliveryFee: selectedRestaurant.deliveryFee, total: total(),
-        };
-        // Offline fallback: a locally minted order, used when the backend is unreachable.
-        let payload = {
-          ...body,
-          id: Math.floor(Math.random()*9000)+1000,
           status: 'pending', transactionId: txId,
           createdAt: new Date().toISOString(),
-          persisted: false,
         };
-        if (backendAvailable) {
-          try {
-            const res = await fetch(`${API_URL}/orders`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body),
-            });
-            if (!res.ok) throw new Error(`Order failed: ${res.status}`);
-            // The server owns id / createdAt / estimatedDelivery; transactionId is client-only.
-            payload = { ...(await res.json()), transactionId: txId, persisted: true };
-          } catch (e) { console.error(e); }
-        }
-        setAssignedCourier(courier);
         setOrderDetails(payload);
         setOrderStatusIdx(0);
         setChatMessages([{ from: 'bot', text: `Hi ${customerName.split(' ')[0]}! I'm ${courier.name}, your delivery courier. I'll keep you updated! 😊` }]);
@@ -487,6 +482,13 @@ const handleSearch = useCallback(async (q) => {
                     <div className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"><IcSearch /></div>
                   </div>
                 </div>
+                {menuError && (
+                  <div role="alert" className="max-w-2xl mx-auto mb-10 bg-[#1a1a1a] border-2 border-red-400 p-4 flex items-center justify-between gap-4">
+                    <p className="text-red-400 font-bold">{menuError}</p>
+                    <button onClick={() => setMenuError('')} aria-label="Dismiss message"
+                      className="text-gray-500 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#00d9ff] transition-colors shrink-0"><IcX /></button>
+                  </div>
+                )}
                 {loading ? (
                   <div className="text-center py-20 text-2xl text-gray-500">Loading...</div>
                 ) : restaurants.length === 0 ? (
@@ -688,9 +690,8 @@ const handleSearch = useCallback(async (q) => {
                   <div className="border-t-2 border-gray-700 pt-4 flex justify-between text-2xl font-bold">
                     <span>Total</span><span className="text-[#ff6b35]">${total().toFixed(2)}</span>
                   </div>
-                  <button onClick={processPayment} disabled={submitting}
-                    className="w-full btn-primary text-white font-bold py-5 text-xl disabled:opacity-60 disabled:cursor-not-allowed">
-                    {submitting ? 'PROCESSING…' : 'PAY $' + total().toFixed(2)}
+                  <button onClick={processPayment} className="w-full btn-primary text-white font-bold py-5 text-xl">
+                    PAY ${total().toFixed(2)}
                   </button>
                   <p className="text-center text-gray-600 text-xs">🔒 This is a demo — no real payment is processed.</p>
                 </div>
