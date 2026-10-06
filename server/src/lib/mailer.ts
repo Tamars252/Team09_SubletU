@@ -2,10 +2,13 @@
  * Outbound email. Resend is used when a key is present because it is a single
  * HTTPS call — no SMTP client, no new dependency.
  *
- * With no key configured the message is written to the server log instead.
- * That keeps local development working without an account, and config.ts
- * refuses to boot in production without a key, so a real deployment can never
- * quietly swallow a password reset.
+ * With no key configured, or when Resend rejects a message (e.g. the sending
+ * domain isn't verified, so only the account's own address can receive mail),
+ * the content is written to the server log instead of being delivered. That
+ * keeps registration and password reset working without a verified domain —
+ * check the log for the code or link rather than an inbox. This fallback is for
+ * development only: in production a rejection throws, and config.ts refuses to boot
+ * without a key.
  */
 import fs from "node:fs";
 import { config, mailerConfigured } from "../config.ts";
@@ -64,10 +67,30 @@ export async function sendMail(mail: Mail): Promise<void> {
   });
 
   if (!res.ok) {
-    // Surfaced to the caller, which logs it. The HTTP response to the user
-    // stays generic either way, so a delivery failure cannot be used to work
-    // out whether an address is registered.
-    throw new Error(`Resend rejected the message (${res.status}): ${await res.text()}`);
+    const detail = `Resend rejected the message (${res.status}): ${await res.text()}`;
+
+    // In production, never write codes or reset links to the log — surface the
+    // failure to the caller, which logs it. The HTTP response to the user stays
+    // generic either way, so a delivery failure cannot be used to work out
+    // whether an address is registered.
+    if (config.isProd) throw new Error(detail);
+
+    // Without a verified sending domain, Resend only delivers to the
+    // account's own address — every other recipient gets rejected here. Log
+    // the content instead of throwing, so a registration or reset request
+    // still succeeds and the code/link can be read from the server log.
+    console.warn(`[mail] ${detail}`);
+    console.log(
+      [
+        "",
+        "  ┌─ email (Resend could not deliver this — content below) ──────",
+        `  │ to:      ${mail.to}`,
+        `  │ subject: ${mail.subject}`,
+        ...mail.text.split("\n").map((line) => `  │ ${line}`),
+        "  └──────────────────────────────────────────────────────────────",
+        "",
+      ].join("\n"),
+    );
   }
 }
 
