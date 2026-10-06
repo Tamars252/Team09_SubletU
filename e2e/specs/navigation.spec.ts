@@ -8,7 +8,8 @@ test.beforeEach(async ({ page }) => {
   await expect(app.topCard(page)).toBeVisible();
 });
 
-const TABS = ["Browse", "Map", "Post", "Saved", "Messages", "Profile"] as const;
+// Post is not a tab: it opens from a button in Browse's header (see below).
+const TABS = ["Browse", "Map", "Saved", "Messages", "Profile"] as const;
 
 test.describe("tab navigation", () => {
   for (const tab of TABS) {
@@ -33,6 +34,11 @@ test.describe("tab navigation", () => {
       await page.waitForTimeout(250);
     }
     expect(errors, `console errors: ${errors.join(" | ")}`).toEqual([]);
+  });
+
+  test("the Post button in Browse's header opens your listings", async ({ page }) => {
+    await page.getByRole("button", { name: "Post a listing", exact: true }).click();
+    await expect(page.locator(".header-title", { hasText: "Your listings" })).toBeVisible();
   });
 
   test("returning to Browse keeps the deck where it was", async ({ page }) => {
@@ -67,7 +73,7 @@ test.describe("listing detail routing", () => {
     await expect(page.locator(".nav-item")).toHaveCount(0);
 
     await page.getByRole("button", { name: "Back" }).click();
-    await expect(page.locator(".nav-item")).toHaveCount(6);
+    await expect(page.locator(".nav-item")).toHaveCount(TABS.length);
   });
 });
 
