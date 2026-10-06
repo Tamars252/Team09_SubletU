@@ -64,10 +64,13 @@ export default defineConfig({
   ],
 
   webServer: {
+    // Quoted: a checkout path containing a space (common on Windows) would
+    // otherwise be split into separate arguments and node would look for a
+    // module named after the first word.
     command: [
-      `node --no-warnings=ExperimentalWarning ${path.join(ROOT, "e2e/setup/prepare-db.ts")}`,
+      `node --no-warnings=ExperimentalWarning "${path.join(ROOT, "e2e/setup/prepare-db.ts")}"`,
       "npm run build",
-      `node --no-warnings=ExperimentalWarning ${path.join(ROOT, "server/src/index.ts")}`,
+      `node --no-warnings=ExperimentalWarning "${path.join(ROOT, "server/src/index.ts")}"`,
     ].join(" && "),
     cwd: ROOT,
     url: `${BASE_URL}/api/health`,

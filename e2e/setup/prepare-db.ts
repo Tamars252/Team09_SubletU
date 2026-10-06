@@ -58,8 +58,13 @@ export function prepareDatabase(): void {
   for (const row of cache) insert.run(row.query, row.lat, row.lng, row.display_name, now);
   db.close();
 
-  execFileSync("npm", ["run", "seed", "--workspace", "server", "--", "--force"], {
+  // On Windows npm is npm.cmd, which execFileSync cannot resolve on its own,
+  // and since Node's CVE-2024-27980 fix a .cmd can only be spawned through a
+  // shell. Neither is needed on POSIX, where npm is a normal executable.
+  const onWindows = process.platform === "win32";
+  execFileSync(onWindows ? "npm.cmd" : "npm", ["run", "seed", "--workspace", "server", "--", "--force"], {
     cwd: REPO_ROOT,
+    shell: onWindows,
     env: {
       ...env,
       // Any address the fixture misses must fail fast rather than hang on a
