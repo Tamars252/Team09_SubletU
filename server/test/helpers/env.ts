@@ -33,5 +33,18 @@ process.env.JWT_TTL_HOURS = "1";
 process.env.NOMINATIM_URL = "http://127.0.0.1:9/never-called";
 
 process.on("exit", () => {
-  fs.rmSync(TEST_ROOT, { recursive: true, force: true });
+  // Best-effort. On Windows the SQLite handle opened by `src/db.ts` is still
+  // open when exit handlers run, and the OS refuses to unlink an open file —
+  // `rmSync` throws EPERM, which `force: true` does NOT suppress (it only
+  // swallows ENOENT). An exception thrown here crashes the test process after
+  // its assertions have already passed, turning a green run red. POSIX allows
+  // unlinking an open file, so this only ever bites Windows developers.
+  //
+  // Leaving the directory behind is harmless: it lives under os.tmpdir() and
+  // carries only a throwaway database the next run never reads.
+  try {
+    fs.rmSync(TEST_ROOT, { recursive: true, force: true });
+  } catch {
+    // Ignore — see above.
+  }
 });
