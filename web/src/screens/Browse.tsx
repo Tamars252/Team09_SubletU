@@ -5,6 +5,7 @@ import { activeFilterCount } from "../api/types.ts";
 import { SwipeCard } from "../components/SwipeCard.tsx";
 import type { SwipeDirection } from "../components/SwipeCard.tsx";
 import { FilterSheet } from "../components/FilterSheet.tsx";
+import { ReportSheet } from "../components/ReportSheet.tsx";
 import {
   IconHeart,
   IconPlus,
@@ -19,7 +20,6 @@ type Props = {
   onFiltersChange: (filters: Filters) => void;
   reference: Reference | null;
   onOpenListing: (listing: Listing) => void;
-  onReport: (listing: Listing) => void;
   onSavedChange: () => void;
   onOpenPost: () => void;
 };
@@ -31,7 +31,6 @@ export function Browse({
   onFiltersChange,
   reference,
   onOpenListing,
-  onReport,
   onSavedChange,
   onOpenPost,
 }: Props) {
@@ -41,6 +40,7 @@ export function Browse({
   const [error, setError] = useState<string | null>(null);
   const [flyOut, setFlyOut] = useState<SwipeDirection | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [reporting, setReporting] = useState<Listing | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [canUndo, setCanUndo] = useState(false);
 
@@ -276,7 +276,7 @@ export function Browse({
             <button
               type="button"
               className="deck-btn small"
-              onClick={() => onReport(top)}
+              onClick={() => setReporting(top)}
               aria-label="Report this listing"
             >
               <IconFlag size={18} />
@@ -305,6 +305,18 @@ export function Browse({
         >
           {toast}
         </div>
+      )}
+
+      {reporting && (
+        <ReportSheet
+          listing={reporting}
+          reference={reference}
+          onClose={() => setReporting(null)}
+          onReported={() => {
+            // A reported listing leaves the deck as a pass, never a save.
+            if (deck[0]?.id === reporting.id) trigger("left");
+          }}
+        />
       )}
 
       {showFilters && (
