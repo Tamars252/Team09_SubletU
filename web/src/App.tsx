@@ -169,7 +169,6 @@ export function App() {
                 onFiltersChange={setFilters}
                 reference={reference}
                 onOpenListing={openListing}
-                onReport={setReporting}
                 onSavedChange={bumpSaved}
                 onOpenPost={() => setTab("post")}
               />
