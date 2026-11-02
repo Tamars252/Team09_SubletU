@@ -14,6 +14,7 @@
     "seed": "npm run seed --workspace server",
     "build": "npm run build --workspace web",
     "start": "npm run start --workspace server",
+    "test": "npm run test --workspace server",
     "typecheck": "npm run typecheck --workspace server && npm run typecheck --workspace web"
   },
   "devDependencies": {
