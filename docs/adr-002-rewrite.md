@@ -134,7 +134,7 @@ covering both — are only achievable in one repo.
   error for an unknown email and a wrong password, so it cannot be used to enumerate
   accounts.
 - **Deleting a listing is a soft delete** (`status = 'removed'`) so existing conversations
-  keep working for both parties. See [erd.md](erd.md).
+  keep working for both parties. See [ERD.md](ERD.md).
 - **Photos** are downscaled to a 1600 px long edge in the browser before upload; the server
   independently enforces `MAX_PHOTO_BYTES`. The client half implements
   `PhotoData.compressPhoto()` from the diagram; the server half is the authority.
