@@ -14,11 +14,19 @@ const TOKEN_KEY = "subletu.token";
 export class ApiError extends Error {
   status: number;
   problems: string[];
+  /** Extra, endpoint-specific detail the API attaches — e.g. `retryAfterSeconds` on a 429. */
+  details: Record<string, unknown>;
 
-  constructor(status: number, message: string, problems: string[] = []) {
+  constructor(
+    status: number,
+    message: string,
+    problems: string[] = [],
+    details: Record<string, unknown> = {},
+  ) {
     super(message);
     this.status = status;
     this.problems = problems;
+    this.details = details;
   }
 }
 
@@ -69,7 +77,11 @@ async function request<T>(
   }
 
   if (!res.ok) {
-    const data = (payload ?? {}) as { error?: string; problems?: string[] };
+    const data = (payload ?? {}) as {
+      error?: string;
+      problems?: string[];
+      details?: Record<string, unknown>;
+    };
     // An expired or revoked token should drop us back to the sign-in screen.
     if (res.status === 401 && token) setToken(null);
     // Every real API error answers with JSON. No JSON at all means something
@@ -79,7 +91,7 @@ async function request<T>(
       payload === null
         ? `Couldn't reach the SubletU server (${res.status}). It may be offline — try again.`
         : `Request failed (${res.status})`;
-    throw new ApiError(res.status, data.error ?? fallback, data.problems ?? []);
+    throw new ApiError(res.status, data.error ?? fallback, data.problems ?? [], data.details ?? {});
   }
 
   return payload as T;
