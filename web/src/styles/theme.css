@@ -12,6 +12,9 @@
   --ink: #2d3436;
   --slate: #636e72;
   --mist: #b2bec3;
+  /* The .auth-screen rules below already reference --muted, which was never
+     defined — those rules silently inherited their colour. TM09-148. */
+  --muted: var(--slate);
   --green: #3a8d5c;
   --green-bg: #d4eddf;
   --gold: #d4a03a;
@@ -1577,16 +1580,20 @@ input[type="range"]::-webkit-slider-thumb {
   margin-bottom: 22px;
 }
 
-.auth-switch button {
+.auth-switch button,
+.auth-switch a {
   flex: 1;
   padding: 9px;
+  text-align: center;
+  text-decoration: none;
   border-radius: 9px;
   font-size: 13.5px;
   font-weight: 600;
   color: var(--slate);
 }
 
-.auth-switch button.on {
+.auth-switch button.on,
+.auth-switch a.on {
   background: #fff;
   color: var(--ink);
   box-shadow: var(--shadow-sm);
@@ -1827,4 +1834,42 @@ input[type="range"]::-webkit-slider-thumb {
 .code-input::placeholder {
   color: var(--line-strong);
   letter-spacing: 12px;
+}
+
+/* ------------------------------------------------- auth form errors (TM09-148) */
+
+.field-error {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--danger);
+}
+
+/* A red ring as well as red text, so the error does not rely on colour alone. */
+.input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+.input[aria-invalid="true"]:focus {
+  box-shadow: 0 0 0 3px rgba(214, 48, 49, 0.14);
+}
+
+/* Visible only to screen readers. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The browser default outline disappears against the cream background. */
+.auth a:focus-visible,
+.auth button:focus-visible,
+.auth input:focus-visible {
+  outline: 2px solid var(--terracotta);
+  outline-offset: 2px;
 }
