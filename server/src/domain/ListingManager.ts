@@ -171,7 +171,9 @@ export class ListingManager {
     patch: Partial<SubmitListingInput>,
   ): Promise<OperationStatus> {
     const listing = ListingData.retrieveById(listingId);
-    if (!listing) {
+    // A removed listing is gone as far as callers are concerned. Without this,
+    // PATCH { status: "active" } would quietly bring a deleted listing back.
+    if (!listing || listing.status === "removed") {
       this.operationStatus = "not_found";
       return { ok: false, message: "Listing not found", problems: [], listing: null };
     }
