@@ -16,7 +16,10 @@ contract — they extend `/api/auth` later.
   `:4000`, so the browser is same-origin. In production the API serves the built front end
   itself.
 - **Content type:** `application/json` both ways, except photo uploads, which post a
-  base64 data URL inside a JSON body (the JSON body limit is raised to 14 MB for this).
+  base64 data URL inside a JSON body. The JSON body limit is derived from
+  `MAX_PHOTO_BYTES` — that limit inflated by base64's 4/3, plus envelope headroom — so it
+  always clears one photo at the configured maximum. A body past it is a `413`, the same
+  as a photo past the limit.
 - **Authentication:** `Authorization: Bearer <token>`. Tokens are HS256 JWTs issued by
   `/auth/register` and `/auth/login`.
 - **Timestamps** are ISO 8601 strings in UTC. **Dates** (availability) are `YYYY-MM-DD`.
@@ -40,6 +43,8 @@ returned by the domain layer's `validateData()`.
 | `403` | Authenticated but not allowed (e.g. editing someone else's listing) |
 | `404` | No such resource |
 | `409` | Conflict (e.g. email already registered) |
+| `413` | Payload too large — a photo over `MAX_PHOTO_BYTES`, or a body over the JSON limit |
+| `415` | Unsupported media type — a photo that is not JPEG, PNG or WebP |
 | `422` | Validation failed — check `problems` |
 | `429` | Rate limited — currently the `/auth` credential endpoints, with `Retry-After` |
 | `500` | Unhandled server error |
@@ -288,12 +293,24 @@ editing a price does not consume a geocoder request.
 Rejects anything over `MAX_PHOTO_BYTES` (default 6 MB) or outside the MIME whitelist. The
 browser downscales to a 1600 px long edge first; the server is still the authority.
 
+The whitelist is checked against the **file's magic bytes**, not just the type the data
+URL declares — a PNG header is what makes something a PNG here. The declared type must
+also agree with the bytes.
+
+Checks run in this order, so a caller learns the most useful thing first and no decoding
+work is done on behalf of someone who may not upload at all: auth → listing exists →
+caller is the owner → decode and validate.
+
 **`201`** → `{ "photo": { "photoId": "pho_…", "fileUrl": "/uploads/…", "fileSize": 184320,
-"sortOrder": 2, "uploadTimestamp": "…" } }` · **`422`** too large or wrong type
+"sortOrder": 2, "uploadTimestamp": "…" } }` · **`413`** over `MAX_PHOTO_BYTES` ·
+**`415`** not a JPEG, PNG or WebP · **`403`** not the owner · **`404`** no such listing
 
 ### `DELETE /listings/:id/photos/:photoId` · auth required, owner only
 
-Removes the row and the file on disk. **`200`** → `{ "ok": true }`
+Removes the row and the file on disk. The photo must belong to the listing in the URL —
+a photo id from another listing is a `404`, not a silent success.
+
+**`200`** → `{ "ok": true }` · **`403`** not the owner · **`404`** no such listing or photo
 
 ---
 
