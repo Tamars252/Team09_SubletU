@@ -8,7 +8,9 @@
     "start": "node --no-warnings=ExperimentalWarning src/index.ts",
     "seed": "node --no-warnings=ExperimentalWarning src/seed.ts",
     "test": "node --test --no-warnings=ExperimentalWarning \"test/**/*.test.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "validate:sample": "node --no-warnings=ExperimentalWarning scripts/validate-sample-listings.ts",
+    "seed:sample": "npm run seed"
   },
   "dependencies": {
     "cors": "^2.8.5",
