@@ -1,0 +1,253 @@
+From 1c915b5768671e4d1a3aa1ac10d7975a57e0ecf8 Mon Sep 17 00:00:00 2001
+From: Almoic <Almoiciami@gmail.com>
+Date: Tue, 27 Oct 2026 10:32:48 -0400
+Subject: [PATCH] feat(web): report from the card swipes it left
+
+---
+ e2e/specs/report.spec.ts           | 60 ++++++++++++++++++++++++++++++
+ web/src/App.tsx                    |  1 -
+ web/src/components/ReportSheet.tsx | 34 +++++++++++++----
+ web/src/screens/Browse.tsx         | 18 +++++++--
+ 4 files changed, 102 insertions(+), 11 deletions(-)
+ create mode 100644 e2e/specs/report.spec.ts
+
+diff --git a/e2e/specs/report.spec.ts b/e2e/specs/report.spec.ts
+new file mode 100644
+index 0000000..3513ea0
+--- /dev/null
++++ b/e2e/specs/report.spec.ts
+@@ -0,0 +1,60 @@
++import type { Page } from "@playwright/test";
++import { app, expect, listingsLeft, resetBrowsing, signIn, test } from "../helpers/app.ts";
++
++test.beforeEach(async ({ page }) => {
++  const token = await signIn(page);
++  await page.goto("/");
++  await resetBrowsing(page, token);
++  await page.reload();
++  await expect(app.topCard(page)).toBeVisible();
++});
++
++const reportButton = (page: Page) =>
++  page.getByRole("button", { name: "Report this listing" });
++const reportSheet = (page: Page) =>
++  page.getByRole("dialog", { name: "Report listing" });
++
++test.describe("reporting from the card", () => {
++  test("the report button sits outside the card and does not swipe it", async ({ page }) => {
++    const title = await app.cardTitle(page).innerText();
++    const countBefore = await listingsLeft(page);
++
++    // Outside the card: the button is not a descendant of .swipe-card.
++    await expect(app.topCard(page).getByRole("button", { name: "Report this listing" })).toHaveCount(0);
++
++    await reportButton(page).click();
++    await expect(reportSheet(page)).toBeVisible();
++
++    // Cancelling leaves the same card on top with the same count.
++    await reportSheet(page).getByRole("button", { name: "Cancel" }).click();
++    await expect(reportSheet(page)).toBeHidden();
++    await expect(app.cardTitle(page)).toHaveText(title);
++    expect(await listingsLeft(page)).toBe(countBefore);
++  });
++
++  test("the placeholder explains what to report", async ({ page }) => {
++    await reportButton(page).click();
++    await expect(reportSheet(page).locator("textarea")).toHaveAttribute(
++      "placeholder",
++      /For example/,
++    );
++  });
++
++  test("submitting a report swipes the card left", async ({ page }) => {
++    const title = await app.cardTitle(page).innerText();
++    const countBefore = await listingsLeft(page);
++
++    await reportButton(page).click();
++    const sheet = reportSheet(page);
++    await sheet.getByRole("button", { name: "Suspected scam" }).click();
++    await sheet.getByRole("button", { name: "Submit report" }).click();
++
++    await expect(sheet).toBeHidden();
++    await expect(app.cardTitle(page)).not.toHaveText(title);
++    await expect.poll(() => listingsLeft(page)).toBe(countBefore - 1);
++
++    // Left means pass: the reported listing must not land in Saved.
++    await app.nav(page, "Saved").click();
++    await expect(page.locator(".app-main")).not.toContainText(title);
++  });
++});
+diff --git a/web/src/App.tsx b/web/src/App.tsx
+index dabbce2..39e1b22 100644
+--- a/web/src/App.tsx
++++ b/web/src/App.tsx
+@@ -169,7 +169,6 @@ export function App() {
+                 onFiltersChange={setFilters}
+                 reference={reference}
+                 onOpenListing={openListing}
+-                onReport={setReporting}
+                 onSavedChange={bumpSaved}
+                 onOpenPost={() => setTab("post")}
+               />
+diff --git a/web/src/components/ReportSheet.tsx b/web/src/components/ReportSheet.tsx
+index 248e92f..851f8d1 100644
+--- a/web/src/components/ReportSheet.tsx
++++ b/web/src/components/ReportSheet.tsx
+@@ -1,4 +1,4 @@
+-import { useState } from "react";
++import { useRef, useState } from "react";
+ import { api } from "../api/client.ts";
+ import type { Listing, Reference } from "../api/types.ts";
+ import { IconX } from "./Icons.tsx";
+@@ -7,6 +7,11 @@ type Props = {
+   listing: Listing;
+   reference: Reference | null;
+   onClose: () => void;
++  /**
++   * Called once, as the sheet closes, if the report went through. The deck
++   * uses it to swipe the reported card away.
++   */
++  onReported?: () => void;
+ };
+ 
+ const FALLBACK_REASONS = [
+@@ -18,7 +23,7 @@ const FALLBACK_REASONS = [
+   "Other",
+ ];
+ 
+-export function ReportSheet({ listing, reference, onClose }: Props) {
++export function ReportSheet({ listing, reference, onClose, onReported }: Props) {
+   const reasons = reference?.reportReasons ?? FALLBACK_REASONS;
+   const [reason, setReason] = useState<string | null>(null);
+   const [details, setDetails] = useState("");
+@@ -26,14 +31,29 @@ export function ReportSheet({ listing, reference, onClose }: Props) {
+   const [done, setDone] = useState<string | null>(null);
+   const [error, setError] = useState<string | null>(null);
+ 
++  // Refs, not state: close() also runs from the confirmation timer, which
++  // would otherwise see the values from the render that started it.
++  const reported = useRef(false);
++  const closed = useRef(false);
++
++  // Every way out of the sheet comes through here, so the card swipes away
++  // whether the person waits for the timer or taps the backdrop first.
++  function close() {
++    if (closed.current) return;
++    closed.current = true;
++    if (reported.current) onReported?.();
++    onClose();
++  }
++
+   async function submit() {
+     if (!reason) return;
+     setBusy(true);
+     setError(null);
+     try {
+       const { message } = await api.report({ listingId: listing.id, reason, details });
++      reported.current = true;
+       setDone(message);
+-      setTimeout(onClose, 1600);
++      setTimeout(close, 1600);
+     } catch (err) {
+       setError(err instanceof Error ? err.message : "Could not send the report");
+     } finally {
+@@ -43,12 +63,12 @@ export function ReportSheet({ listing, reference, onClose }: Props) {
+ 
+   return (
+     <>
+-      <div className="sheet-backdrop" onClick={onClose} />
++      <div className="sheet-backdrop" onClick={close} />
+       <div className="sheet" role="dialog" aria-label="Report listing">
+         <div className="grip" />
+         <div className="sheet-head">
+           <h2>Report listing</h2>
+-          <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">
++          <button type="button" className="icon-btn" onClick={close} aria-label="Close">
+             <IconX size={18} />
+           </button>
+         </div>
+@@ -92,7 +112,7 @@ export function ReportSheet({ listing, reference, onClose }: Props) {
+                   rows={4}
+                   value={details}
+                   onChange={(e) => setDetails(e.target.value)}
+-                  placeholder="Tell us what you noticed."
++                  placeholder="What made you report it? For example: they asked for money before a tour, the photos don't match the address, or the price or dates are wrong."
+                   maxLength={1500}
+                 />
+               </label>
+@@ -102,7 +122,7 @@ export function ReportSheet({ listing, reference, onClose }: Props) {
+ 
+         {!done && (
+           <div className="sheet-foot">
+-            <button type="button" className="btn btn-secondary" onClick={onClose}>
++            <button type="button" className="btn btn-secondary" onClick={close}>
+               Cancel
+             </button>
+             <button
+diff --git a/web/src/screens/Browse.tsx b/web/src/screens/Browse.tsx
+index 4420835..fa6df10 100644
+--- a/web/src/screens/Browse.tsx
++++ b/web/src/screens/Browse.tsx
+@@ -5,6 +5,7 @@ import { activeFilterCount } from "../api/types.ts";
+ import { SwipeCard } from "../components/SwipeCard.tsx";
+ import type { SwipeDirection } from "../components/SwipeCard.tsx";
+ import { FilterSheet } from "../components/FilterSheet.tsx";
++import { ReportSheet } from "../components/ReportSheet.tsx";
+ import {
+   IconHeart,
+   IconPlus,
+@@ -19,7 +20,6 @@ type Props = {
+   onFiltersChange: (filters: Filters) => void;
+   reference: Reference | null;
+   onOpenListing: (listing: Listing) => void;
+-  onReport: (listing: Listing) => void;
+   onSavedChange: () => void;
+   onOpenPost: () => void;
+ };
+@@ -31,7 +31,6 @@ export function Browse({
+   onFiltersChange,
+   reference,
+   onOpenListing,
+-  onReport,
+   onSavedChange,
+   onOpenPost,
+ }: Props) {
+@@ -41,6 +40,7 @@ export function Browse({
+   const [error, setError] = useState<string | null>(null);
+   const [flyOut, setFlyOut] = useState<SwipeDirection | null>(null);
+   const [showFilters, setShowFilters] = useState(false);
++  const [reporting, setReporting] = useState<Listing | null>(null);
+   const [toast, setToast] = useState<string | null>(null);
+   const [canUndo, setCanUndo] = useState(false);
+ 
+@@ -276,7 +276,7 @@ export function Browse({
+             <button
+               type="button"
+               className="deck-btn small"
+-              onClick={() => onReport(top)}
++              onClick={() => setReporting(top)}
+               aria-label="Report this listing"
+             >
+               <IconFlag size={18} />
+@@ -307,6 +307,18 @@ export function Browse({
+         </div>
+       )}
+ 
++      {reporting && (
++        <ReportSheet
++          listing={reporting}
++          reference={reference}
++          onClose={() => setReporting(null)}
++          onReported={() => {
++            // A reported listing leaves the deck as a pass, never a save.
++            if (deck[0]?.id === reporting.id) trigger("left");
++          }}
++        />
++      )}
++
+       {showFilters && (
+         <FilterSheet
+           filters={filters}
+-- 
+2.52.0.windows.1
+
