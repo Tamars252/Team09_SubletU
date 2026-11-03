@@ -41,7 +41,7 @@ returned by the domain layer's `validateData()`.
 | `404` | No such resource |
 | `409` | Conflict (e.g. email already registered) |
 | `422` | Validation failed — check `problems` |
-| `429` | Rate limited |
+| `429` | Rate limited — currently the `/auth` credential endpoints, with `Retry-After` |
 | `500` | Unhandled server error |
 
 `401` and `404` are deliberately indistinguishable in some places: asking for a listing
@@ -197,7 +197,13 @@ All fields optional; omitted fields keep their value. Email is not editable.
 { "currentPassword": "…", "newPassword": "…" }
 ```
 
-`newPassword` 8–200. **`200`** → `{ "ok": true }` · **`401`** current password wrong
+`newPassword` 8–200.
+
+**`200`** → `{ "ok": true, "token": "…" }` · **`401`** current password wrong
+
+Changing the password invalidates every token issued before the change, so other
+devices are signed out. The fresh token in the response keeps the calling client
+signed in — clients must store it.
 
 ---
 

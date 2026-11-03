@@ -42,7 +42,6 @@ app.use(
 
 // Photos arrive as base64 data URLs, so the JSON body limit has to be generous.
 app.use(express.json({ limit: "14mb" }));
-app.use(attachUser);
 
 if (!config.isProd) {
   app.use((req, _res, next) => {
@@ -53,6 +52,8 @@ if (!config.isProd) {
 
 /* ------------------------------------------------------------------ static */
 
+// Mounted ahead of attachUser: listing photos are public, and a page full of
+// them should not cost one token verification and one user query per image.
 app.use(
   "/uploads",
   express.static(config.uploadDir, {
@@ -63,6 +64,8 @@ app.use(
     },
   }),
 );
+
+app.use(attachUser);
 
 /* --------------------------------------------------------------------- api */
 

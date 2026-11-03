@@ -1,7 +1,6 @@
 import { db, nowIso, transaction } from "../db.ts";
 import { newId } from "../lib/crypto.ts";
 import { geocodeAddress } from "../lib/geocode.ts";
-import { Data, ValidationError } from "./Data.ts";
 import { ListingData } from "./ListingData.ts";
 import type { ListingFilter, ListingSort } from "./ListingData.ts";
 import { PhotoData } from "./PhotoData.ts";
@@ -33,6 +32,8 @@ export type SubmitListingInput = {
   status?: string;
 };
 
+type DecodedPhoto = { bytes: Buffer; ext: string };
+
 export type OperationStatus = {
   ok: boolean;
   message: string;
@@ -50,9 +51,36 @@ export type OperationStatus = {
  * The single entry point the API routes use for listing lifecycle work, so all
  * validation, geocoding and persistence rules live in one place.
  */
+/** One cap, enforced by every path that can add a photo. */
+export const MAX_PHOTOS_PER_LISTING = 10;
+
 export class ListingManager {
   listing: ListingData | null = null;
   operationStatus = "idle";
+
+  /**
+   * Writes the decoded photos and stores the listing as one unit.
+   *
+   * The files are not part of the SQLite transaction, so if the write fails
+   * anywhere the files already on disk are removed by hand — otherwise a
+   * failed save leaves images nothing references.
+   */
+  private storeWithPhotos(listing: ListingData, decoded: DecodedPhoto[]): void {
+    const written: PhotoData[] = [];
+    try {
+      transaction(() => {
+        const start = listing.photoData.length;
+        decoded.forEach((photo, i) => {
+          written.push(PhotoData.persist(listing.listingId, photo, start + i));
+        });
+        listing.photoData.push(...written);
+        listing.storeData();
+      });
+    } catch (err) {
+      for (const photo of written) PhotoData.discardFile(photo.fileUrl);
+      throw err;
+    }
+  }
 
   /* ------------------------------------------------------- ValidateListing */
 
@@ -72,16 +100,14 @@ export class ListingManager {
     // Real geocode against OpenStreetMap so the map pin is the actual address.
     const point = await geocodeAddress(input.address, input.city, input.state);
 
-    let photos: PhotoData[];
+    // Decode first, write later: nothing reaches UPLOAD_DIR until the whole
+    // listing has passed validation.
+    let decoded: DecodedPhoto[];
     try {
-      photos = [
-        ...input.photoDataUrls.map((dataUrl, i) =>
-          PhotoData.fromDataUrl(listingId, dataUrl, i),
-        ),
-        ...(input.photoUrls ?? []).map((url, i) =>
-          PhotoData.fromRemoteUrl(listingId, url, input.photoDataUrls.length + i),
-        ),
-      ];
+      if (input.photoDataUrls.length > MAX_PHOTOS_PER_LISTING) {
+        throw new Error(`A listing can have at most ${MAX_PHOTOS_PER_LISTING} photos`);
+      }
+      decoded = input.photoDataUrls.map((dataUrl) => PhotoData.decodeDataUrl(dataUrl));
     } catch (err) {
       this.operationStatus = "photo_rejected";
       return {
@@ -91,6 +117,10 @@ export class ListingManager {
         listing: null,
       };
     }
+
+    const photos = (input.photoUrls ?? []).map((url, i) =>
+      PhotoData.fromRemoteUrl(listingId, url, decoded.length + i),
+    );
 
     const listing = new ListingData({
       listingId,
@@ -134,7 +164,7 @@ export class ListingManager {
       return { ok: false, message: "Listing was not accepted", problems, listing: null };
     }
 
-    transaction(() => listing.storeData());
+    this.storeWithPhotos(listing, decoded);
     this.listing = listing;
     this.operationStatus = "submitted";
     return {
@@ -221,14 +251,13 @@ export class ListingManager {
       listing.geocodeSource = point ? "nominatim" : "unresolved";
     }
 
+    let decoded: DecodedPhoto[] = [];
     if (patch.photoDataUrls && patch.photoDataUrls.length > 0) {
-      const start = listing.photoData.length;
       try {
-        listing.photoData.push(
-          ...patch.photoDataUrls.map((dataUrl, i) =>
-            PhotoData.fromDataUrl(listingId, dataUrl, start + i),
-          ),
-        );
+        if (listing.photoData.length + patch.photoDataUrls.length > MAX_PHOTOS_PER_LISTING) {
+          throw new Error(`A listing can have at most ${MAX_PHOTOS_PER_LISTING} photos`);
+        }
+        decoded = patch.photoDataUrls.map((dataUrl) => PhotoData.decodeDataUrl(dataUrl));
       } catch (err) {
         this.operationStatus = "photo_rejected";
         return {
@@ -246,7 +275,7 @@ export class ListingManager {
       return { ok: false, message: "Update was not accepted", problems, listing: null };
     }
 
-    transaction(() => listing.storeData());
+    this.storeWithPhotos(listing, decoded);
     this.listing = listing;
     this.operationStatus = "updated";
     return { ok: true, message: "Listing updated", problems: [], listing };
@@ -273,10 +302,10 @@ export class ListingManager {
     }
 
     transaction(() => {
-      for (const photo of PhotoData.retrieveForListing(listingId)) {
-        PhotoData.deleteById(photo.photoId, listingId);
-      }
-      // Soft-delete keeps conversation history intact for both parties.
+      // Soft-delete keeps conversation history intact for both parties — and
+      // keeps the photos, so the owner can set the listing back to active.
+      // A hard delete would cascade to photos through the schema's foreign
+      // keys; destroying them here left a "removed" listing unrecoverable.
       db.prepare("UPDATE listings SET status = 'removed', updated_at = ? WHERE id = ?").run(
         nowIso(),
         listingId,
@@ -289,5 +318,3 @@ export class ListingManager {
     return { ok: true, message: "Listing removed", problems: [], listing: null };
   }
 }
-
-export { Data, ValidationError };

@@ -3,9 +3,10 @@ import type { Request } from "express";
 import { db } from "../db.ts";
 import { ListingData } from "../domain/ListingData.ts";
 import type { ListingFilter, ListingSort } from "../domain/ListingData.ts";
-import { ListingManager } from "../domain/ListingManager.ts";
+import type { SubmitListingInput } from "../domain/ListingManager.ts";
+import { ListingManager, MAX_PHOTOS_PER_LISTING } from "../domain/ListingManager.ts";
 import { PhotoData } from "../domain/PhotoData.ts";
-import { CAMPUS_ANCHORS } from "../lib/geocode.ts";
+import { campusAnchor } from "../lib/geocode.ts";
 import {
   asyncHandler,
   badRequest,
@@ -52,8 +53,10 @@ function parseFilter(req: Request): { filter: ListingFilter; sort: ListingSort }
     amenities: q.amenities
       ? q.amenities.split(",").map((a) => a.trim()).filter(Boolean)
       : undefined,
-    availableFrom: q.availableFrom || undefined,
-    availableTo: q.availableTo || undefined,
+    // Normalised, not passed through: SQLite's date() returns NULL for an
+    // unpadded "2026-5-1", which silently matches nothing.
+    availableFrom: q.availableFrom ? requireDate(q, "availableFrom") : undefined,
+    availableTo: q.availableTo ? requireDate(q, "availableTo") : undefined,
     radiusMiles: num(q.radiusMiles),
   };
 
@@ -72,9 +75,7 @@ function parseFilter(req: Request): { filter: ListingFilter; sort: ListingSort }
   if (lat !== undefined && lng !== undefined) {
     filter.near = { lat, lng };
   } else {
-    const campus = q.campus || req.user?.university || "Syracuse University";
-    const anchor = CAMPUS_ANCHORS[campus];
-    if (anchor) filter.near = anchor;
+    filter.near = campusAnchor(q.campus || req.user?.university);
   }
 
   const sortParam = (q.sort ?? "newest") as ListingSort;
@@ -82,20 +83,28 @@ function parseFilter(req: Request): { filter: ListingFilter; sort: ListingSort }
   return { filter, sort };
 }
 
+const MAX_AMENITIES = 30;
+
+/** Amenity lists arrive from the client, so they are filtered, not trusted. */
+function readAmenities(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return (value as unknown[])
+    .filter((a): a is string => typeof a === "string")
+    .map((a) => a.trim())
+    .filter(Boolean)
+    .slice(0, MAX_AMENITIES);
+}
+
+function readPhotos(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const photos = (value as unknown[]).filter((p): p is string => typeof p === "string");
+  if (photos.length > MAX_PHOTOS_PER_LISTING) {
+    throw badRequest(`A listing can have at most ${MAX_PHOTOS_PER_LISTING} photos`);
+  }
+  return photos;
+}
+
 function readListingBody(body: Record<string, unknown>) {
-  const photoDataUrls = Array.isArray(body.photos)
-    ? (body.photos as unknown[]).filter((p): p is string => typeof p === "string")
-    : [];
-  if (photoDataUrls.length > 10) throw badRequest("A listing can have at most 10 photos");
-
-  const amenities = Array.isArray(body.amenities)
-    ? (body.amenities as unknown[])
-        .filter((a): a is string => typeof a === "string")
-        .map((a) => a.trim())
-        .filter(Boolean)
-        .slice(0, 30)
-    : [];
-
   return {
     title: requireString(body, "title", { min: 4, max: 120 }),
     address: requireString(body, "address", { min: 5, max: 200 }),
@@ -114,10 +123,80 @@ function readListingBody(body: Record<string, unknown>) {
     petsAllowed: toBool(body.petsAllowed),
     furnished: toBool(body.furnished),
     privateBath: toBool(body.privateBath),
-    amenities,
-    photoDataUrls,
+    amenities: readAmenities(body.amenities),
+    photoDataUrls: readPhotos(body.photos),
   };
 }
+
+/**
+ * The PATCH counterpart: only the keys the caller actually sent, each run
+ * through the same validator the create path uses. Forwarding the raw body
+ * instead let a PATCH past every rule POST enforces.
+ */
+function readListingPatch(body: Record<string, unknown>): Partial<SubmitListingInput> {
+  const patch: Partial<SubmitListingInput> = {};
+
+  if (body.title !== undefined) patch.title = requireString(body, "title", { min: 4, max: 120 });
+  if (body.address !== undefined) {
+    patch.address = requireString(body, "address", { min: 5, max: 200 });
+  }
+  if (body.city !== undefined) patch.city = requireString(body, "city", { max: 80 });
+  if (body.state !== undefined) {
+    patch.state = requireString(body, "state", { min: 2, max: 2 }).toUpperCase();
+  }
+  if (body.zip !== undefined) patch.zip = optionalString(body, "zip", "", 10);
+  if (body.description !== undefined) {
+    patch.description = requireString(body, "description", { min: 20, max: 4000 });
+  }
+
+  if (body.monthlyRent !== undefined) {
+    patch.monthlyRent = requireNumber(body, "monthlyRent", { min: 1, max: 20_000 });
+  }
+  if (body.availableFrom !== undefined) patch.availableFrom = requireDate(body, "availableFrom");
+  if (body.availableTo !== undefined) patch.availableTo = requireDate(body, "availableTo");
+  if (body.deposit !== undefined) {
+    patch.deposit = requireNumber(body, "deposit", { min: 0, max: 50_000 });
+  }
+  if (body.bedrooms !== undefined) {
+    patch.bedrooms = requireNumber(body, "bedrooms", { min: 0, max: 12 });
+  }
+  if (body.bathrooms !== undefined) {
+    patch.bathrooms = requireNumber(body, "bathrooms", { min: 0.5, max: 12 });
+  }
+  if (body.maxRoommates !== undefined) {
+    patch.maxRoommates = requireNumber(body, "maxRoommates", { min: 0, max: 20 });
+  }
+
+  if (body.utilitiesIncluded !== undefined) {
+    patch.utilitiesIncluded = toBool(body.utilitiesIncluded);
+  }
+  if (body.petsAllowed !== undefined) patch.petsAllowed = toBool(body.petsAllowed);
+  if (body.furnished !== undefined) patch.furnished = toBool(body.furnished);
+  if (body.privateBath !== undefined) patch.privateBath = toBool(body.privateBath);
+
+  if (body.amenities !== undefined) patch.amenities = readAmenities(body.amenities);
+  if (body.photos !== undefined) patch.photoDataUrls = readPhotos(body.photos);
+
+  if (body.status !== undefined) {
+    if (typeof body.status !== "string" || !["active", "paused"].includes(body.status)) {
+      throw badRequest('status must be "active" or "paused"');
+    }
+    patch.status = body.status;
+  }
+
+  return patch;
+}
+
+/** Saves, right-swipes and inquiries for every listing one host owns. */
+const statsForOwnerSql = `
+  SELECT l.id AS listing_id,
+         (SELECT COUNT(*) FROM saved_listings s WHERE s.listing_id = l.id) AS saves,
+         (SELECT COUNT(*) FROM swipes w
+           WHERE w.listing_id = l.id AND w.direction = 'right') AS likes,
+         (SELECT COUNT(*) FROM conversations c WHERE c.listing_id = l.id) AS inquiries
+  FROM listings l
+  WHERE l.owner_id = ?
+`;
 
 /* ------------------------------------------------------------------ browse */
 
@@ -168,22 +247,30 @@ listingsRouter.get(
   asyncHandler(async (req, res) => {
     const user = currentUser(req);
     const manager = new ListingManager();
-    const active = manager.retrieveListings({ ownerId: user.id, status: "active" }, "newest");
-    const paused = manager.retrieveListings({ ownerId: user.id, status: "paused" }, "newest");
+    // Removed listings are included: they are soft-deleted, and this screen is
+    // the only place their owner can set them back to active.
+    const byStatus = ["active", "paused", "removed"].map((status) =>
+      manager.retrieveListings({ ownerId: user.id, status }, "newest"),
+    );
 
-    const withStats = [...active, ...paused].map((l) => {
-      const saves = db
-        .prepare("SELECT COUNT(*) AS n FROM saved_listings WHERE listing_id = ?")
-        .get(l.listingId) as { n: number };
-      const rights = db
-        .prepare(
-          "SELECT COUNT(*) AS n FROM swipes WHERE listing_id = ? AND direction = 'right'",
-        )
-        .get(l.listingId) as { n: number };
-      const inquiries = db
-        .prepare("SELECT COUNT(*) AS n FROM conversations WHERE listing_id = ?")
-        .get(l.listingId) as { n: number };
-      return { ...l.toJSON(), stats: { saves: saves.n, likes: rights.n, inquiries: inquiries.n } };
+    const stats = db.prepare(statsForOwnerSql).all(user.id) as Array<{
+      listing_id: string;
+      saves: number;
+      likes: number;
+      inquiries: number;
+    }>;
+    const byListing = new Map(stats.map((row) => [row.listing_id, row]));
+
+    const withStats = byStatus.flat().map((l) => {
+      const row = byListing.get(l.listingId);
+      return {
+        ...l.toJSON(),
+        stats: {
+          saves: row?.saves ?? 0,
+          likes: row?.likes ?? 0,
+          inquiries: row?.inquiries ?? 0,
+        },
+      };
     });
 
     res.json({ results: withStats });
@@ -227,37 +314,7 @@ listingsRouter.patch(
   requireAuth,
   asyncHandler(async (req, res) => {
     const user = currentUser(req);
-    const body = req.body as Record<string, unknown>;
-
-    // Only forward keys the caller actually sent, so PATCH stays a partial update.
-    const patch: Record<string, unknown> = {};
-    const passthrough = [
-      "title",
-      "address",
-      "city",
-      "state",
-      "zip",
-      "description",
-      "monthlyRent",
-      "availableFrom",
-      "availableTo",
-      "deposit",
-      "bedrooms",
-      "bathrooms",
-      "maxRoommates",
-    ];
-    for (const key of passthrough) if (body[key] !== undefined) patch[key] = body[key];
-    for (const key of ["utilitiesIncluded", "petsAllowed", "furnished", "privateBath"]) {
-      if (body[key] !== undefined) patch[key] = toBool(body[key]);
-    }
-    if (Array.isArray(body.amenities)) patch.amenities = body.amenities;
-    if (Array.isArray(body.photos)) patch.photoDataUrls = body.photos;
-    if (typeof body.status === "string") {
-      if (!["active", "paused"].includes(body.status)) {
-        throw badRequest('status must be "active" or "paused"');
-      }
-      patch.status = body.status;
-    }
+    const patch = readListingPatch(req.body as Record<string, unknown>);
 
     const manager = new ListingManager();
     const status = await manager.updateListing(req.params.id, user.id, patch);
@@ -302,16 +359,24 @@ listingsRouter.post(
       min: 32,
       max: 12_000_000,
     });
-    if (listing.photoData.length >= 10) throw badRequest("A listing can have at most 10 photos");
+    if (listing.photoData.length >= MAX_PHOTOS_PER_LISTING) {
+      throw badRequest(`A listing can have at most ${MAX_PHOTOS_PER_LISTING} photos`);
+    }
 
-    let photo: PhotoData;
+    let decoded: { bytes: Buffer; ext: string };
     try {
-      photo = PhotoData.fromDataUrl(listing.listingId, dataUrl, listing.photoData.length);
+      decoded = PhotoData.decodeDataUrl(dataUrl);
     } catch (err) {
+      // Nothing has reached the uploads directory at this point.
       throw badRequest((err as Error).message);
     }
+
+    const photo = PhotoData.persist(listing.listingId, decoded, listing.photoData.length);
     const problems = photo.validateData();
-    if (problems.length > 0) throw badRequest(problems.join("; "));
+    if (problems.length > 0) {
+      PhotoData.discardFile(photo.fileUrl);
+      throw badRequest(problems.join("; "));
+    }
 
     photo.storeData();
     res.status(201).json({ photo: photo.toJSON() });
