@@ -149,7 +149,9 @@ describe("POST /api/listings/:id/photos", () => {
 
   it("rejects a body past the JSON limit with the same 413 shape", async () => {
     // Never reaches the route — body-parser rejects it first. The client still
-    // gets one clear answer rather than a 500.
+    // gets one clear answer rather than a 500. The wording does not mention a
+    // photo, because this limit guards every route, but it still names the
+    // photo size that sets it.
     const listingId = seedListing(owner.id);
     const before = uploadedFiles();
     const huge = "A".repeat(config.jsonBodyLimitBytes + 1024);
@@ -161,7 +163,8 @@ describe("POST /api/listings/:id/photos", () => {
 
     assert.equal(res.status, 413);
     assert.equal(typeof res.body.error, "string");
-    assert.match(res.body.error as string, /the limit is/);
+    assert.match(res.body.error as string, /Request body is too large/);
+    assert.match(res.body.error as string, /a photo may be at most/);
     assert.deepEqual(uploadedFiles(), before);
   });
 

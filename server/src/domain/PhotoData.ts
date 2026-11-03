@@ -73,6 +73,15 @@ export function photoTooLargeMessage(actualBytes?: number): string {
 }
 
 /**
+ * For a body rejected by the JSON size limit, which guards every route — so
+ * it must not claim a photo was involved. The limit is still derived from the
+ * photo size, which is the number a caller needs in order to act.
+ */
+export function bodyTooLargeMessage(): string {
+  return `Request body is too large; a photo may be at most ${humanBytes(config.maxPhotoBytes)}`;
+}
+
+/**
  * The MIME type the *bytes* say they are, or null if they are not an image we
  * accept. A `data:` URL's declared type is attacker-controlled, so it decides
  * nothing on its own — this is what stops an executable arriving as

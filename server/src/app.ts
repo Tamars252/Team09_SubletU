@@ -6,7 +6,7 @@ import type { Express, NextFunction, Request, Response } from "express";
 import { config, SERVER_ROOT } from "./config.ts";
 import { db } from "./db.ts";
 import { ValidationError } from "./domain/Data.ts";
-import { photoTooLargeMessage } from "./domain/PhotoData.ts";
+import { bodyTooLargeMessage } from "./domain/PhotoData.ts";
 import { HttpError } from "./lib/http.ts";
 import { attachUser } from "./middleware/auth.ts";
 import { authRouter } from "./routes/auth.ts";
@@ -142,8 +142,12 @@ export function createApp(): Express {
     // raw-body rejects an over-sized body before any route runs. Without this
     // it matches none of the branches below and becomes a 500, which tells a
     // client nothing about the one thing it can act on.
+    //
+    // The limit guards every route, not just photo uploads, so the message
+    // cannot claim a photo was involved — but the limit is set by the photo
+    // size, so saying what that is remains the useful part.
     if (isPayloadTooLarge(err)) {
-      res.status(413).json({ error: photoTooLargeMessage() });
+      res.status(413).json({ error: bodyTooLargeMessage() });
       return;
     }
     if (err instanceof SyntaxError && "body" in err) {

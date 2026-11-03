@@ -44,7 +44,7 @@ returned by the domain layer's `validateData()`.
 | `404` | No such resource |
 | `409` | Conflict (e.g. email already registered) |
 | `413` | Payload too large — a photo over `MAX_PHOTO_BYTES`, or a body over the JSON limit |
-| `415` | Unsupported media type — a photo that is not JPEG, PNG or WebP |
+| `415` | Unsupported media type — a photo that is not JPEG, PNG or WebP (`POST /listings/:id/photos` only) |
 | `422` | Validation failed — check `problems` |
 | `429` | Rate limited — currently the `/auth` credential endpoints, with `Retry-After` |
 | `500` | Unhandled server error |
@@ -268,6 +268,11 @@ Goes through `ListingManager.submitListing()`, so validation cascades through
 `PricingData`, `RoomDetails` and `PhotoData`. The address is geocoded server-side — the
 client never sends coordinates (FR-4.2).
 
+A photo rejected here is a **`422`** with the reason in `problems`, *not* a `413` or
+`415`. These two endpoints go through `ListingManager`, which collapses every photo
+failure into one validation result; only `POST /listings/:id/photos` distinguishes the
+two. Send photos to that endpoint if you need to tell "too large" from "wrong format".
+
 **`201`** → `{ "message": "…", "listing": Listing }` · **`422`** → `{ "error": "…", "problems": [...] }`
 
 ### `PATCH /listings/:id` · auth required, owner only
@@ -275,7 +280,8 @@ client never sends coordinates (FR-4.2).
 Same body, all fields optional. The address is re-geocoded **only if it changed**, so
 editing a price does not consume a geocoder request.
 
-**`200`** → `{ "message": "…", "listing": Listing }` · **`403`** not the owner · **`422`** validation failed
+**`200`** → `{ "message": "…", "listing": Listing }` · **`403`** not the owner · **`422`** validation
+failed, including a rejected photo (see `POST /listings` above)
 
 ### `DELETE /listings/:id` · auth required, owner only
 
