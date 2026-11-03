@@ -55,6 +55,11 @@ export const config = {
   databaseFile: resolveFromServer(str("DATABASE_FILE", "./data/subletu.db")),
   uploadDir: resolveFromServer(str("UPLOAD_DIR", "./uploads")),
   maxPhotoBytes: int("MAX_PHOTO_BYTES", 6 * 1024 * 1024),
+  // Photos arrive as base64 data URLs inside a JSON body, so the body limit
+  // has to clear MAX_PHOTO_BYTES inflated by base64's 4/3, plus the data:
+  // prefix and the JSON envelope. Derived rather than hardcoded so raising
+  // MAX_PHOTO_BYTES cannot silently leave the body limit below it.
+  jsonBodyLimitBytes: Math.ceil((int("MAX_PHOTO_BYTES", 6 * 1024 * 1024) * 4) / 3) + 64 * 1024,
   nominatimUrl: str("NOMINATIM_URL", "https://nominatim.openstreetmap.org"),
   nominatimUserAgent: str(
     "NOMINATIM_USER_AGENT",
