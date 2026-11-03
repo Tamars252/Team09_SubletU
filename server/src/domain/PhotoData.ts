@@ -37,6 +37,65 @@ const ALLOWED_MIME: Record<string, string> = {
 };
 
 /**
+ * Why a photo was turned away. The HTTP layer maps these to status codes
+ * (413 / 415 / 400); the domain layer stays free of any HTTP import.
+ */
+export type PhotoRejection = "malformed" | "unsupported_type" | "too_large";
+
+export class PhotoFormatError extends Error {
+  reason: PhotoRejection;
+
+  constructor(reason: PhotoRejection, message: string) {
+    super(message);
+    this.reason = reason;
+  }
+}
+
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/** Human-readable size, in whichever unit does not round to zero. */
+function humanBytes(n: number): string {
+  if (n >= 1_048_576) return `${(n / 1_048_576).toFixed(1)} MB`;
+  if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${n} bytes`;
+}
+
+/**
+ * The one wording for "that photo is too big", shared by the decoder and by
+ * the body-size guard in the error middleware — a request rejected before it
+ * reaches the route reads the same as one rejected inside it.
+ */
+export function photoTooLargeMessage(actualBytes?: number): string {
+  const limit = `the limit is ${humanBytes(config.maxPhotoBytes)}`;
+  return actualBytes === undefined
+    ? `Photo is too large; ${limit}`
+    : `Photo is ${humanBytes(actualBytes)}; ${limit}`;
+}
+
+/**
+ * The MIME type the *bytes* say they are, or null if they are not an image we
+ * accept. A `data:` URL's declared type is attacker-controlled, so it decides
+ * nothing on its own — this is what stops an executable arriving as
+ * `data:image/png;base64,…` and then being served back out of /uploads.
+ */
+export function sniffImageType(bytes: Buffer): string | null {
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(PNG_MAGIC)) return "image/png";
+  // JPEG: SOI marker, then any of the JFIF/Exif/raw variants.
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
+  }
+  // WebP is a RIFF container: "RIFF" <4-byte length> "WEBP".
+  if (
+    bytes.length >= 12 &&
+    bytes.subarray(0, 4).toString("latin1") === "RIFF" &&
+    bytes.subarray(8, 12).toString("latin1") === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
+
+/**
  * PhotoData  (generalizes Data)
  *   - photoId : String
  *   - fileUrl : String
@@ -125,18 +184,39 @@ export class PhotoData extends Data {
    */
   static decodeDataUrl(dataUrl: string): { bytes: Buffer; ext: string } {
     const match = /^data:([\w/+.-]+);base64,(.+)$/s.exec(dataUrl);
-    if (!match) throw new Error("Photo must be a base64 data URL");
+    if (!match) throw new PhotoFormatError("malformed", "Photo must be a base64 data URL");
     const [, mime, base64] = match;
-    const ext = ALLOWED_MIME[mime.toLowerCase()];
-    if (!ext) throw new Error(`Unsupported image type "${mime}" — use JPEG, PNG or WebP`);
-
-    const bytes = Buffer.from(base64, "base64");
-    if (bytes.byteLength > config.maxPhotoBytes) {
-      throw new Error(
-        `Photo is ${(bytes.byteLength / 1_048_576).toFixed(1)} MB; the limit is ` +
-          `${(config.maxPhotoBytes / 1_048_576).toFixed(0)} MB`,
+    const declared = mime.toLowerCase();
+    const ext = ALLOWED_MIME[declared];
+    if (!ext) {
+      throw new PhotoFormatError(
+        "unsupported_type",
+        `Unsupported image type "${mime}" — use JPEG, PNG or WebP`,
       );
     }
+
+    const bytes = Buffer.from(base64, "base64");
+    // Size before content: an over-sized payload is over-sized whatever it
+    // turns out to be, and "too large" is the more useful thing to be told.
+    if (bytes.byteLength > config.maxPhotoBytes) {
+      throw new PhotoFormatError("too_large", photoTooLargeMessage(bytes.byteLength));
+    }
+
+    // The declared type got us this far; the bytes have to agree with it.
+    const actual = sniffImageType(bytes);
+    if (actual === null) {
+      throw new PhotoFormatError(
+        "unsupported_type",
+        "Photo is not a JPEG, PNG or WebP image — the file contents do not match any of them",
+      );
+    }
+    if (actual !== declared) {
+      throw new PhotoFormatError(
+        "unsupported_type",
+        `Photo claims to be "${mime}" but its contents are ${actual}`,
+      );
+    }
+
     return { bytes, ext };
   }
 
