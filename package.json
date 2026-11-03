@@ -15,7 +15,10 @@
     "build": "npm run build --workspace web",
     "start": "npm run start --workspace server",
     "test": "npm run test --workspace server && npm run test --workspace web",
-    "typecheck": "npm run typecheck --workspace server && npm run typecheck --workspace web"
+    "typecheck": "npm run typecheck --workspace server && npm run typecheck --workspace web",
+    "validate:sample": "npm run validate:sample --workspace server",
+    "seed:sample": "npm run seed:sample --workspace server",
+    "docs:sample": "npm run docs:sample --workspace server"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
