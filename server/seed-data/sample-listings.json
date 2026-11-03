@@ -7,7 +7,7 @@
   "hosts": [
     {
       "key": "aisha",
-      "email": "amansour@syr.edu",
+      "email": "amansour@example.edu",
       "name": "Aisha Mansour",
       "university": "Syracuse University",
       "bio": "Junior studying Architecture. I keep a clean, quiet space and I'm looking for a respectful subletter for the summer.",
@@ -17,7 +17,7 @@
     },
     {
       "key": "devon",
-      "email": "dcarter@syr.edu",
+      "email": "dcarter@example.edu",
       "name": "Devon Carter",
       "university": "Syracuse University",
       "bio": "Newhouse senior, graduating in May. Everything in the apartment stays — furniture, kitchen stuff, the whole setup.",
@@ -27,7 +27,7 @@
     },
     {
       "key": "priya",
-      "email": "pnair@syr.edu",
+      "email": "pnair@example.edu",
       "name": "Priya Nair",
       "university": "Syracuse University",
       "bio": "Grad student in the iSchool. I sublet my place every summer while I'm doing fieldwork — easy handoff, I've done this three times.",
@@ -37,7 +37,7 @@
     },
     {
       "key": "marcus",
-      "email": "mokafor@syr.edu",
+      "email": "mokafor@example.edu",
       "name": "Marcus Okafor",
       "university": "Syracuse University",
       "bio": "Whitman '27. Big house with a porch on Ackerman — great if you want roommates around for the summer.",
@@ -47,7 +47,7 @@
     },
     {
       "key": "hannah",
-      "email": "hlindqvist@syr.edu",
+      "email": "hlindqvist@example.edu",
       "name": "Hannah Lindqvist",
       "university": "Syracuse University",
       "bio": "ESF student, off to a field station for the summer. Cat-friendly place, and I'd love someone who likes plants.",
@@ -57,7 +57,7 @@
     },
     {
       "key": "tyler",
-      "email": "tbrennan@syr.edu",
+      "email": "tbrennan@example.edu",
       "name": "Tyler Brennan",
       "university": "Syracuse University",
       "bio": "Engineering junior with a summer co-op in Boston. Room is right on the Connective Corridor bus route.",
@@ -67,7 +67,7 @@
     },
     {
       "key": "sofia",
-      "email": "sreyes@syr.edu",
+      "email": "sreyes@example.edu",
       "name": "Sofia Reyes",
       "university": "Syracuse University",
       "bio": "VPA painting major. My studio apartment gets incredible afternoon light — perfect if you need a quiet place to work.",
@@ -77,7 +77,7 @@
     },
     {
       "key": "jordan",
-      "email": "jkim@syr.edu",
+      "email": "jkim@example.edu",
       "name": "Jordan Kim",
       "university": "Syracuse University",
       "bio": "Law student. Managing the sublet for our 4-person house near Thornden Park while everyone scatters for the summer.",
@@ -174,16 +174,16 @@
     },
     {
       "host": "sofia",
-      "title": "Sunlit studio steps from Marshall Street",
-      "address": "750 S Crouse Ave",
+      "title": "Sunlit studio right on Marshall Street",
+      "address": "127 Marshall St",
       "city": "Syracuse",
       "state": "NY",
       "zip": "13210",
       "fallback": {
-        "lat": 43.0448,
-        "lng": -76.1364
+        "lat": 43.047,
+        "lng": -76.1359
       },
-      "description": "Top-floor studio with west-facing windows and afternoon light for days. Everything you need is walkable — Marshall Street is at the end of the block, and it's a five-minute walk to Bird Library. Small but genuinely well laid out: a real kitchen, a proper closet, and a desk nook by the window.",
+      "description": "Top-floor studio above the Marshall Street shops, with west-facing windows and afternoon light for days. Everything you need is downstairs, and it's a five-minute walk to Bird Library. Small but genuinely well laid out: a real kitchen, a proper closet, and a desk nook by the window.",
       "monthlyRent": 820,
       "availableFrom": "2026-05-10",
       "availableTo": "2026-08-20",

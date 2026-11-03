@@ -238,7 +238,7 @@ async function main(): Promise<void> {
   const total = db.prepare("SELECT COUNT(*) AS n FROM listings").get() as { n: number };
   console.log(`\n  Done. ${total.n} listings — ${geocoded} geocoded live, ${fellBack} from fallback.`);
   console.log(`  Demo login:  demo@syr.edu / ${PASSWORD}`);
-  console.log(`  Host login:  amansour@syr.edu / ${PASSWORD}  (has listings to manage)\n`);
+  console.log(`  Host login:  ${HOSTS[0].email} / ${PASSWORD}  (has listings to manage)\n`);
 }
 
 main()
