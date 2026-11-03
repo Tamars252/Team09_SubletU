@@ -10,7 +10,8 @@
     "test": "node --test --no-warnings=ExperimentalWarning \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "validate:sample": "node --no-warnings=ExperimentalWarning scripts/validate-sample-listings.ts",
-    "seed:sample": "npm run seed"
+    "seed:sample": "npm run seed",
+    "docs:sample": "node --no-warnings=ExperimentalWarning scripts/write-sample-docs.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
