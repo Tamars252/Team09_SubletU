@@ -28,7 +28,14 @@ export function verifyPassword(password: string, stored: string): boolean {
 
 /* ------------------------------------------------------------------- jwt */
 
-type JwtPayload = { sub: string; email: string; iat: number; exp: number };
+export type JwtPayload = {
+  sub: string;
+  email: string;
+  /** users.token_version when the token was issued. See issueToken(). */
+  tv: number;
+  iat: number;
+  exp: number;
+};
 
 function b64url(input: Buffer | string): string {
   return Buffer.from(input).toString("base64url");
@@ -38,11 +45,17 @@ function sign(data: string): string {
   return crypto.createHmac("sha256", config.jwtSecret).update(data).digest("base64url");
 }
 
-export function issueToken(userId: string, email: string): string {
+/**
+ * Tokens live for 30 days by default, so there has to be a way to end a
+ * session early. `tv` carries the account's token_version; bumping that column
+ * invalidates every token issued before the bump (see the password change
+ * route), without a server-side session table.
+ */
+export function issueToken(userId: string, email: string, tokenVersion: number): string {
   const iat = Math.floor(Date.now() / 1000);
   const exp = iat + config.jwtTtlHours * 3600;
   const header = b64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const body = b64url(JSON.stringify({ sub: userId, email, iat, exp }));
+  const body = b64url(JSON.stringify({ sub: userId, email, tv: tokenVersion, iat, exp }));
   return `${header}.${body}.${sign(`${header}.${body}`)}`;
 }
 
@@ -57,6 +70,7 @@ export function verifyToken(token: string): JwtPayload | null {
   try {
     const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as JwtPayload;
     if (typeof payload.exp !== "number" || payload.exp < Math.floor(Date.now() / 1000)) return null;
+    if (typeof payload.tv !== "number") return null;
     return payload;
   } catch {
     return null;

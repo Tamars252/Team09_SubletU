@@ -1,5 +1,20 @@
-import { db } from "../db.ts";
+import { chunkIds, db, placeholders } from "../db.ts";
 import { Data } from "./Data.ts";
+
+type PricingRow = {
+  listing_id: string;
+  monthly_rent: number;
+  available_from: string;
+  available_to: string;
+  utilities_included: number;
+  deposit: number;
+};
+
+const PRICING_COLUMNS = `SELECT listing_id, monthly_rent, available_from, available_to,
+          utilities_included, deposit
+   FROM pricing`;
+
+const selectForListing = db.prepare(`${PRICING_COLUMNS} WHERE listing_id = ?`);
 
 export type PricingFields = {
   listingId: string;
@@ -86,24 +101,7 @@ export class PricingData extends Data {
     return true;
   }
 
-  static retrieveForListing(listingId: string): PricingData | null {
-    const row = db
-      .prepare(
-        `SELECT listing_id, monthly_rent, available_from, available_to,
-                utilities_included, deposit
-         FROM pricing WHERE listing_id = ?`,
-      )
-      .get(listingId) as
-      | {
-          listing_id: string;
-          monthly_rent: number;
-          available_from: string;
-          available_to: string;
-          utilities_included: number;
-          deposit: number;
-        }
-      | undefined;
-    if (!row) return null;
+  private static fromRow(row: PricingRow): PricingData {
     return new PricingData({
       listingId: row.listing_id,
       monthlyRent: row.monthly_rent,
@@ -112,6 +110,23 @@ export class PricingData extends Data {
       utilitiesIncluded: row.utilities_included === 1,
       deposit: row.deposit,
     });
+  }
+
+  static retrieveForListing(listingId: string): PricingData | null {
+    const row = selectForListing.get(listingId) as PricingRow | undefined;
+    return row ? PricingData.fromRow(row) : null;
+  }
+
+  /** One query for a whole page of listings, instead of one query each. */
+  static retrieveForListings(listingIds: string[]): Map<string, PricingData> {
+    const byListing = new Map<string, PricingData>();
+    for (const chunk of chunkIds(listingIds)) {
+      const sql = `${PRICING_COLUMNS} WHERE listing_id IN (${placeholders(chunk.length)})`;
+      for (const row of db.prepare(sql).all(...chunk) as PricingRow[]) {
+        byListing.set(row.listing_id, PricingData.fromRow(row));
+      }
+    }
+    return byListing;
   }
 
   toJSON() {

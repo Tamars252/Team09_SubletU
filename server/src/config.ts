@@ -33,7 +33,9 @@ function str(key: string, fallback: string): string {
 }
 
 function int(key: string, fallback: number): number {
-  const v = Number(process.env[key]);
+  const raw = process.env[key];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const v = Number(raw);
   return Number.isFinite(v) ? v : fallback;
 }
 
@@ -61,8 +63,15 @@ export const config = {
   isProd: process.env.NODE_ENV === "production",
 };
 
-if (config.isProd && config.jwtSecret === "dev-only-change-me") {
-  throw new Error("Refusing to start in production with the default JWT_SECRET.");
+if (config.isProd) {
+  // Both secrets are load-bearing: one signs sessions, the other encrypts every
+  // user's settings payload at rest. Neither may keep its development default.
+  if (config.jwtSecret === "dev-only-change-me") {
+    throw new Error("Refusing to start in production with the default JWT_SECRET.");
+  }
+  if (config.settingsSecret === "dev-only-change-me-too") {
+    throw new Error("Refusing to start in production with the default SETTINGS_SECRET.");
+  }
 }
 
 fs.mkdirSync(path.dirname(config.databaseFile), { recursive: true });

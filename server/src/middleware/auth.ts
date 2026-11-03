@@ -31,6 +31,14 @@ const selectUser = db.prepare(
    FROM users WHERE id = ?`,
 );
 
+const selectTokenVersion = db.prepare("SELECT token_version FROM users WHERE id = ?");
+
+/** The account's current token_version, or null when the user is gone. */
+export function tokenVersionFor(id: string): number | null {
+  const row = selectTokenVersion.get(id) as { token_version: number } | undefined;
+  return row ? row.token_version : null;
+}
+
 export function loadUserById(id: string): AuthUser | null {
   const row = selectUser.get(id) as
     | {
@@ -73,8 +81,14 @@ export function attachUser(req: Request, _res: Response, next: NextFunction): vo
   if (token) {
     const payload = verifyToken(token);
     if (payload) {
-      const user = loadUserById(payload.sub);
-      if (user) req.user = user;
+      // A token minted before the account's last password change carries a
+      // stale tv and is ignored, which is what makes a password change log
+      // other devices out.
+      const current = tokenVersionFor(payload.sub);
+      if (current !== null && current === payload.tv) {
+        const user = loadUserById(payload.sub);
+        if (user) req.user = user;
+      }
     }
   }
   next();

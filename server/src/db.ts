@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS users (
   bio              TEXT NOT NULL DEFAULT '',
   avatar_initials  TEXT NOT NULL DEFAULT '',
   verified         INTEGER NOT NULL DEFAULT 0,
+  token_version    INTEGER NOT NULL DEFAULT 0,
   rating           REAL NOT NULL DEFAULT 0,
   review_count     INTEGER NOT NULL DEFAULT 0,
   created_at       TEXT NOT NULL
@@ -164,6 +165,38 @@ CREATE INDEX IF NOT EXISTS idx_messages_convo  ON messages(conversation_id, crea
 CREATE INDEX IF NOT EXISTS idx_convo_guest     ON conversations(guest_id);
 CREATE INDEX IF NOT EXISTS idx_convo_host      ON conversations(host_id);
 `);
+
+/**
+ * Adds a column to an existing table when it is missing.
+ *
+ * The schema above is CREATE TABLE IF NOT EXISTS, which means a database
+ * created by an earlier version never picks up a new column. Anything added
+ * after the first release needs a line here as well, or it exists only on
+ * freshly created databases.
+ */
+function ensureColumn(table: string, column: string, ddl: string): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (columns.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+}
+
+ensureColumn("users", "token_version", "INTEGER NOT NULL DEFAULT 0");
+
+/** `?, ?, ?` for an IN clause of n values. */
+export function placeholders(n: number): string {
+  return new Array(n).fill("?").join(", ");
+}
+
+/**
+ * Splits ids into batches an IN clause can take. SQLite caps the number of
+ * bound parameters per statement, so a page of listings is queried in chunks
+ * rather than one statement per listing.
+ */
+export function chunkIds(ids: string[], size = 400): string[][] {
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += size) chunks.push(ids.slice(i, i + size));
+  return chunks;
+}
 
 export function nowIso(): string {
   return new Date().toISOString();

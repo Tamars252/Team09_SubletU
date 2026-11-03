@@ -17,6 +17,8 @@ export const unauthorized = (message = "Sign in required") => new HttpError(401,
 export const forbidden = (message = "Not allowed") => new HttpError(403, message);
 export const notFound = (message = "Not found") => new HttpError(404, message);
 export const conflict = (message: string) => new HttpError(409, message);
+export const tooManyRequests = (message: string, retryAfterSeconds: number) =>
+  new HttpError(429, message, { retryAfterSeconds });
 
 /** Wraps an async handler so rejected promises reach the error middleware. */
 export function asyncHandler(
@@ -89,10 +91,35 @@ export function toBool(value: unknown, fallback = false): boolean {
   return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
 }
 
-/** Accepts YYYY-MM-DD and rejects anything Date can't parse. */
+const DATE_RE = /^(\d{4})-(\d{1,2})-(\d{1,2})$/;
+
+/**
+ * Accepts YYYY-MM-DD (month and day may be unpadded) and always returns the
+ * zero-padded form.
+ *
+ * The padding matters: SQLite's date() returns NULL for "2026-1-5", so an
+ * unpadded date stored verbatim makes the listing invisible to every
+ * availability filter, and sorts wrong under a string comparison.
+ */
 export function requireDate(body: Record<string, unknown>, field: string): string {
   const value = requireString(body, field, { min: 8, max: 32 });
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) throw badRequest(`"${field}" is not a valid date`);
-  return value.length > 10 ? parsed.toISOString().slice(0, 10) : value;
+  const match = DATE_RE.exec(value);
+  if (!match) throw badRequest(`"${field}" must be a date in YYYY-MM-DD form`);
+
+  const [, y, m, d] = match;
+  const year = Number(y);
+  const month = Number(m);
+  const day = Number(d);
+
+  // Date() rolls over out-of-range parts (Feb 31 -> Mar 3), so compare back.
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    throw badRequest(`"${field}" is not a valid date`);
+  }
+
+  return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
 }
