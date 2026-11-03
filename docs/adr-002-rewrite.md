@@ -3,6 +3,9 @@
 **Story:** SCRUM-48 · Sprint 5 · Tareq Haque
 **Status:** Accepted
 **Builds on:** [ADR-001](adr-001-stack.md), which chose this stack in principle
+**Amended:** 2026-11-03 — the prototype has been removed from the working tree, reversing
+the SCRUM-50 decision recorded under *Consequences*. It remains reachable in history at
+`36d1774` and earlier.
 
 ## Context
 
@@ -19,7 +22,7 @@ It cannot become the product, for three reasons.
 the schema lives in a hosted console. There is nothing to point at and say "this is
 `validateData()`", and nothing to unit test.
 
-**2. One file does not scale.** `legacy/prototype.html` is ~436 KB of markup, CSS and
+**2. One file does not scale.** The prototype was ~436 KB of markup, CSS and
 JavaScript in a single document. Two people cannot work in it without conflicting on
 every commit, and by the end of Sprint 4 the fix commits were visibly fighting each other
 over card height and gesture handling.
@@ -39,8 +42,7 @@ than the code.**
 ```
 SubletU/
 ├── server/    Express + SQLite API (TypeScript, no build step)
-├── web/       React + Vite front end (TypeScript)
-└── legacy/    the prototype, kept for reference
+└── web/       React + Vite front end (TypeScript)
 ```
 
 Sequenced so the API is finished before the front end starts:
@@ -138,5 +140,8 @@ covering both — are only achievable in one repo.
 - **Photos** are downscaled to a 1600 px long edge in the browser before upload; the server
   independently enforces `MAX_PHOTO_BYTES`. The client half implements
   `PhotoData.compressPhoto()` from the diagram; the server half is the authority.
-- **The prototype stays at `legacy/prototype.html`** (SCRUM-50) and still opens in a
-  browser with no build step.
+- **The prototype has been removed from the working tree.** It was kept at
+  `legacy/prototype.html` under SCRUM-50 while the rewrite was in progress; now that the
+  rewrite is done the repository carries no prototype material outside history. The last
+  commit containing it is `36d1774`. The swipe deck and the screens it demonstrated are
+  rebuilt on the React scaffold rather than ported.

@@ -141,5 +141,6 @@ table. Addresses are geocoded once, at seed or post time — never per page view
 **Follow-ups**
 
 - ADR-002 records the actual migration decision at the end of Sprint 5
-- The prototype is kept at `legacy/prototype.html` rather than deleted (SCRUM-50), so the
-  design decisions it settled stay inspectable
+- The prototype was kept at `legacy/prototype.html` under SCRUM-50 while the rewrite was
+  in progress, and removed from the working tree once it was complete. It stays
+  inspectable in history at `36d1774` and earlier — see the amendment note on ADR-002

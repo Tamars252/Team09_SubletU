@@ -2,8 +2,9 @@
 
 **Story:** SCRUM-47 · Sprint 5 · Chris Martinez
 
-Testing of `legacy/prototype.html` before the production rewrite. The goal was to settle
-interaction questions while they were still cheap to change — see
+Testing of the Sprint 3–4 prototype (formerly `legacy/prototype.html`, removed from the
+working tree and reachable in history at `36d1774`) before the production rewrite. The
+goal was to settle interaction questions while they were still cheap to change — see
 [ADR-002](adr-002-rewrite.md).
 
 ## Method
