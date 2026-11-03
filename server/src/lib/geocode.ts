@@ -20,7 +20,16 @@ function throttle<T>(fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
-const selectCache = db.prepare("SELECT lat, lng, display_name FROM geocache WHERE query = ?");
+/**
+ * How long a "no match" answer is trusted. A hit never expires — an address
+ * does not move — but a miss is often Nominatim being unreachable or slow, and
+ * caching that forever pins the listing to "unresolved" for good.
+ */
+const NEGATIVE_CACHE_MS = 7 * 24 * 60 * 60 * 1000;
+
+const selectCache = db.prepare(
+  "SELECT lat, lng, display_name, created_at FROM geocache WHERE query = ?",
+);
 const upsertCache = db.prepare(`
   INSERT INTO geocache (query, lat, lng, display_name, created_at)
   VALUES (?, ?, ?, ?, ?)
@@ -30,10 +39,19 @@ const upsertCache = db.prepare(`
 
 function readCache(key: string): GeoPoint | null | undefined {
   const row = selectCache.get(key) as
-    | { lat: number | null; lng: number | null; display_name: string | null }
+    | {
+        lat: number | null;
+        lng: number | null;
+        display_name: string | null;
+        created_at: string;
+      }
     | undefined;
   if (!row) return undefined; // never looked up
-  if (row.lat === null || row.lng === null) return null; // looked up, no result
+  if (row.lat === null || row.lng === null) {
+    // Looked up, no result — retry once the miss has gone stale.
+    const age = Date.now() - new Date(row.created_at).getTime();
+    return Number.isFinite(age) && age > NEGATIVE_CACHE_MS ? undefined : null;
+  }
   return { lat: row.lat, lng: row.lng, displayName: row.display_name };
 }
 
@@ -116,6 +134,11 @@ export function haversineMiles(
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/** The map pin a campus name resolves to, falling back to the home campus. */
+export function campusAnchor(university: string | undefined): { lat: number; lng: number } {
+  return CAMPUS_ANCHORS[university ?? ""] ?? CAMPUS_ANCHORS["Syracuse University"];
 }
 
 /** Campus anchors used for the "distance from campus" badge. */

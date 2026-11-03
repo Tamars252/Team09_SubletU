@@ -1,5 +1,21 @@
-import { db } from "../db.ts";
+import { chunkIds, db, placeholders } from "../db.ts";
 import { Data } from "./Data.ts";
+
+type RoomDetailsRow = {
+  listing_id: string;
+  bedrooms: number;
+  bathrooms: number;
+  max_roommates: number;
+  pets_allowed: number;
+  furnished: number;
+  private_bath: number;
+};
+
+const ROOM_COLUMNS = `SELECT listing_id, bedrooms, bathrooms, max_roommates, pets_allowed,
+          furnished, private_bath
+   FROM room_details`;
+
+const selectForListing = db.prepare(`${ROOM_COLUMNS} WHERE listing_id = ?`);
 
 export type RoomDetailsFields = {
   listingId: string;
@@ -43,7 +59,7 @@ export class RoomDetails extends Data {
     if (!Number.isInteger(this.bedrooms) || this.bedrooms < 0 || this.bedrooms > 12) {
       problems.push("Bedrooms must be a whole number between 0 and 12");
     }
-    if (!Number.isFinite(this.bathrooms) || this.bathrooms <= 0 || this.bathrooms > 12) {
+    if (!Number.isFinite(this.bathrooms) || this.bathrooms < 0.5 || this.bathrooms > 12) {
       problems.push("Bathrooms must be between 0.5 and 12");
     }
     if (!Number.isInteger(this.maxRoommates) || this.maxRoommates < 0 || this.maxRoommates > 20) {
@@ -87,25 +103,7 @@ export class RoomDetails extends Data {
     return true;
   }
 
-  static retrieveForListing(listingId: string): RoomDetails | null {
-    const row = db
-      .prepare(
-        `SELECT listing_id, bedrooms, bathrooms, max_roommates, pets_allowed,
-                furnished, private_bath
-         FROM room_details WHERE listing_id = ?`,
-      )
-      .get(listingId) as
-      | {
-          listing_id: string;
-          bedrooms: number;
-          bathrooms: number;
-          max_roommates: number;
-          pets_allowed: number;
-          furnished: number;
-          private_bath: number;
-        }
-      | undefined;
-    if (!row) return null;
+  private static fromRow(row: RoomDetailsRow): RoomDetails {
     return new RoomDetails({
       listingId: row.listing_id,
       bedrooms: row.bedrooms,
@@ -115,6 +113,23 @@ export class RoomDetails extends Data {
       furnished: row.furnished === 1,
       privateBath: row.private_bath === 1,
     });
+  }
+
+  static retrieveForListing(listingId: string): RoomDetails | null {
+    const row = selectForListing.get(listingId) as RoomDetailsRow | undefined;
+    return row ? RoomDetails.fromRow(row) : null;
+  }
+
+  /** One query for a whole page of listings, instead of one query each. */
+  static retrieveForListings(listingIds: string[]): Map<string, RoomDetails> {
+    const byListing = new Map<string, RoomDetails>();
+    for (const chunk of chunkIds(listingIds)) {
+      const sql = `${ROOM_COLUMNS} WHERE listing_id IN (${placeholders(chunk.length)})`;
+      for (const row of db.prepare(sql).all(...chunk) as RoomDetailsRow[]) {
+        byListing.set(row.listing_id, RoomDetails.fromRow(row));
+      }
+    }
+    return byListing;
   }
 
   toJSON() {

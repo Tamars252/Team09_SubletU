@@ -17,6 +17,7 @@ import { PricingData } from "./domain/PricingData.ts";
 import { RoomDetails } from "./domain/RoomDetails.ts";
 import { ScreenSettings } from "./domain/ScreenSettings.ts";
 import { hashPassword, newId } from "./lib/crypto.ts";
+import { initialsFor } from "./lib/text.ts";
 import { geocodeAddress } from "./lib/geocode.ts";
 
 type SeedHost = {
@@ -956,15 +957,6 @@ const LISTINGS: SeedListing[] = [
 ];
 
 /* -------------------------------------------------------------------- run */
-
-function initialsFor(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0].toUpperCase())
-    .join("");
-}
 
 function upsertUser(host: SeedHost): string {
   const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(host.email) as

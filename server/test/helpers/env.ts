@@ -20,6 +20,7 @@ import path from "node:path";
 
 export const TEST_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "subletu-test-"));
 
+process.env.NODE_ENV = "test";
 process.env.DATABASE_FILE = path.join(TEST_ROOT, "test.db");
 process.env.UPLOAD_DIR = path.join(TEST_ROOT, "uploads");
 
@@ -31,6 +32,9 @@ process.env.JWT_TTL_HOURS = "1";
 
 // Never let a test hit the live Nominatim endpoint by accident.
 process.env.NOMINATIM_URL = "http://127.0.0.1:9/never-called";
+
+// Small enough that an "over the limit" photo is a few KB, not a few MB.
+process.env.MAX_PHOTO_BYTES = "4096";
 
 process.on("exit", () => {
   // Best-effort. On Windows the SQLite handle opened by `src/db.ts` is still
@@ -48,3 +52,19 @@ process.on("exit", () => {
     // Ignore — see above.
   }
 });
+
+/** Every file currently under UPLOAD_DIR, relative and sorted. */
+export function uploadedFiles(): string[] {
+  const root = process.env.UPLOAD_DIR as string;
+  if (!fs.existsSync(root)) return [];
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else out.push(path.relative(root, full));
+    }
+  };
+  walk(root);
+  return out.sort();
+}

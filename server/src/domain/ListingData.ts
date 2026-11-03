@@ -1,6 +1,6 @@
-import { db, nowIso } from "../db.ts";
-import { CAMPUS_ANCHORS, haversineMiles } from "../lib/geocode.ts";
-import { Data } from "./Data.ts";
+import { chunkIds, db, nowIso, placeholders } from "../db.ts";
+import { campusAnchor, haversineMiles } from "../lib/geocode.ts";
+import { Data, ValidationError } from "./Data.ts";
 import { PhotoData } from "./PhotoData.ts";
 import { PricingData } from "./PricingData.ts";
 import { RoomDetails } from "./RoomDetails.ts";
@@ -74,6 +74,24 @@ type ListingRow = {
   created_at: string;
   updated_at: string;
 } & OwnerRow;
+
+function retrieveAmenitiesFor(listingIds: string[]): Map<string, string[]> {
+  const grouped = new Map<string, string[]>();
+  for (const chunk of chunkIds(listingIds)) {
+    const rows = db
+      .prepare(
+        `SELECT listing_id, name FROM listing_amenities
+         WHERE listing_id IN (${placeholders(chunk.length)}) ORDER BY name`,
+      )
+      .all(...chunk) as Array<{ listing_id: string; name: string }>;
+    for (const row of rows) {
+      const list = grouped.get(row.listing_id);
+      if (list) list.push(row.name);
+      else grouped.set(row.listing_id, [row.name]);
+    }
+  }
+  return grouped;
+}
 
 const SELECT_BASE = `
   SELECT l.id, l.owner_id, l.title, l.address, l.city, l.state, l.zip, l.description,
@@ -181,6 +199,12 @@ export class ListingData extends Data {
   }
 
   storeData(): void {
+    // Last line of defence: nothing invalid reaches the tables, whichever
+    // caller got here. ListingManager validates first and reports the
+    // problems properly, so in practice this only catches a new call site.
+    const problems = this.validateData();
+    if (problems.length > 0) throw new ValidationError(problems);
+
     this.updatedAt = nowIso();
     db.prepare(
       `INSERT INTO listings (id, owner_id, title, address, city, state, zip, description,
@@ -229,41 +253,55 @@ export class ListingData extends Data {
   /* ------------------------------------------------------------ retrieval */
 
   static hydrate(row: ListingRow): ListingData {
-    const listing = new ListingData({
-      listingId: row.id,
-      ownerId: row.owner_id,
-      title: row.title,
-      address: row.address,
-      city: row.city,
-      state: row.state,
-      zip: row.zip,
-      description: row.description,
-      lat: row.lat,
-      lng: row.lng,
-      geocodeSource: row.geocode_source,
-      status: row.status,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      photoData: PhotoData.retrieveForListing(row.id),
-      pricingData: PricingData.retrieveForListing(row.id),
-      roomDetails: RoomDetails.retrieveForListing(row.id),
-      amenities: (
-        db
-          .prepare("SELECT name FROM listing_amenities WHERE listing_id = ? ORDER BY name")
-          .all(row.id) as Array<{ name: string }>
-      ).map((a) => a.name),
+    return ListingData.hydrateMany([row])[0];
+  }
+
+  /**
+   * Builds listings from already-selected rows, loading the composed objects
+   * for the whole set in four queries rather than four per listing.
+   */
+  static hydrateMany(rows: ListingRow[]): ListingData[] {
+    if (rows.length === 0) return [];
+    const ids = rows.map((row) => row.id);
+
+    const photos = PhotoData.retrieveForListings(ids);
+    const pricing = PricingData.retrieveForListings(ids);
+    const rooms = RoomDetails.retrieveForListings(ids);
+    const amenities = retrieveAmenitiesFor(ids);
+
+    return rows.map((row) => {
+      const listing = new ListingData({
+        listingId: row.id,
+        ownerId: row.owner_id,
+        title: row.title,
+        address: row.address,
+        city: row.city,
+        state: row.state,
+        zip: row.zip,
+        description: row.description,
+        lat: row.lat,
+        lng: row.lng,
+        geocodeSource: row.geocode_source,
+        status: row.status,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        photoData: photos.get(row.id) ?? [],
+        pricingData: pricing.get(row.id) ?? null,
+        roomDetails: rooms.get(row.id) ?? null,
+        amenities: amenities.get(row.id) ?? [],
+      });
+      listing.owner = {
+        id: row.owner_id,
+        name: row.owner_name,
+        university: row.owner_university,
+        bio: row.owner_bio,
+        initials: row.owner_initials,
+        verified: row.owner_verified === 1,
+        rating: row.owner_rating,
+        reviewCount: row.owner_reviews,
+      };
+      return listing;
     });
-    listing.owner = {
-      id: row.owner_id,
-      name: row.owner_name,
-      university: row.owner_university,
-      bio: row.owner_bio,
-      initials: row.owner_initials,
-      verified: row.owner_verified === 1,
-      rating: row.owner_rating,
-      reviewCount: row.owner_reviews,
-    };
-    return listing;
   }
 
   static retrieveById(listingId: string): ListingData | null {
@@ -343,7 +381,7 @@ export class ListingData extends Data {
       WHERE ${where.join(" AND ")}
     `;
     const rows = db.prepare(sql).all(...params) as ListingRow[];
-    let listings = rows.map(ListingData.hydrate);
+    let listings = ListingData.hydrateMany(rows);
 
     if (filter.amenities && filter.amenities.length > 0) {
       const required = filter.amenities.map((a) => a.toLowerCase());
@@ -407,8 +445,8 @@ export class ListingData extends Data {
   }
 
   /** Fills in distanceMiles relative to a campus, for display. */
-  setDistanceFromCampus(university: string): void {
-    const anchor = CAMPUS_ANCHORS[university] ?? CAMPUS_ANCHORS["Syracuse University"];
+  setDistanceFromCampus(university: string | undefined): void {
+    const anchor = campusAnchor(university);
     this.distanceMiles =
       this.lat === null || this.lng === null
         ? null

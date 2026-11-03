@@ -18,19 +18,21 @@ export abstract class Data {
   /** Persists this object to the data store. */
   abstract storeData(): void;
 
-  /** Reloads this object's fields from the data store. */
+  /**
+   * Reloads this object's fields from the data store. Returns false when the
+   * row is gone.
+   *
+   * Part of the class-diagram contract. The call sites reach for the static
+   * retrieveById / retrieveForListing instead, because they need to build an
+   * object they do not have yet; this is the instance-level refresh.
+   */
   abstract retrieveData(): boolean;
-
-  /** Convenience wrapper used by the routes: validate, then throw or store. */
-  validateAndStore(): void {
-    const problems = this.validateData();
-    if (problems.length > 0) {
-      throw new ValidationError(problems);
-    }
-    this.storeData();
-  }
 }
 
+/**
+ * Thrown when a Data object is stored without passing validateData(). The
+ * error middleware in index.ts turns it into the documented 422 response.
+ */
 export class ValidationError extends Error {
   problems: string[];
 

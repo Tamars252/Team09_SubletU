@@ -1,0 +1,202 @@
+From b4bddcf28b91e453af16f64b1755877c11003e9e Mon Sep 17 00:00:00 2001
+From: Tamar Shuster <tshuster@syr.edu>
+Date: Wed, 28 Oct 2026 16:03:07 -0400
+Subject: [PATCH] TM09-131 fix(web): a vertical touch drag no longer passes the
+ card
+
+Swipeable listing cards: cover the touch half of the acceptance criteria
+and fix the bug that turned up while doing it.
+
+- SwipeCard: handle pointercancel on its own and snap the card back. With
+  touch-action: pan-y the browser cancels the pointer as soon as a touch
+  goes vertical, and Chrome reports that cancel at clientX 0. It was routed
+  through onPointerUp, which read it as a long left drag, so trying to
+  scroll on a card silently passed it.
+- e2e: add touchDrag(), which drives Chrome's real touch pipeline over CDP
+  (page.mouse only makes mouse pointers), and swipe-touch.spec.ts: touch
+  right saves, touch left passes, the page does not scroll mid-swipe, and a
+  vertical drag neither swipes nor opens the card. Runs in the mobile
+  project only.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01U4Fq21d5VehQ9sdvMSuJ6d
+---
+ e2e/helpers/app.ts               | 48 +++++++++++++++++++++
+ e2e/specs/swipe-touch.spec.ts    | 73 ++++++++++++++++++++++++++++++++
+ web/src/components/SwipeCard.tsx | 14 +++++-
+ 3 files changed, 134 insertions(+), 1 deletion(-)
+ create mode 100644 e2e/specs/swipe-touch.spec.ts
+
+diff --git a/e2e/helpers/app.ts b/e2e/helpers/app.ts
+index 5d5def4..35f4b10 100644
+--- a/e2e/helpers/app.ts
++++ b/e2e/helpers/app.ts
+@@ -84,6 +84,54 @@ export async function swipeCard(
+   await page.mouse.up();
+ }
+ 
++/**
++ * Drags across the top card with real touch input, the way a phone does.
++ *
++ * `page.mouse` only produces mouse pointers, and `page.touchscreen` can only
++ * tap, so this drives Chrome's touch pipeline over CDP. That matters here:
++ * with `touch-action: pan-y` the browser, not the app, decides whether a touch
++ * is a scroll, and only real touch input goes through that decision.
++ *
++ * Returns the largest scroll offset seen on the page or the app's scroller
++ * while the finger was down, so a test can assert the page held still.
++ */
++export async function touchDrag(
++  page: Page,
++  dx: number,
++  dy: number,
++  steps = 10,
++): Promise<{ maxScroll: number }> {
++  const photo = app.topCard(page).locator(".swipe-photo");
++  const box = await photo.boundingBox();
++  if (!box) throw new Error("swipe photo has no bounding box");
++  const x = box.x + box.width / 2;
++  const y = box.y + box.height / 2;
++
++  const cdp = await page.context().newCDPSession(page);
++  const scrolled = () =>
++    page.evaluate(
++      () => window.scrollY + (document.querySelector(".app-main")?.scrollTop ?? 0),
++    );
++
++  let maxScroll = 0;
++  try {
++    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
++    for (let i = 1; i <= steps; i += 1) {
++      await cdp.send("Input.dispatchTouchEvent", {
++        type: "touchMove",
++        touchPoints: [{ x: x + (dx * i) / steps, y: y + (dy * i) / steps }],
++      });
++      // One frame between moves, so the browser gets to act on each one.
++      await page.waitForTimeout(16);
++      maxScroll = Math.max(maxScroll, await scrolled());
++    }
++    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
++  } finally {
++    await cdp.detach();
++  }
++  return { maxScroll };
++}
++
+ /** Opens the top card's detail screen by tapping its title. */
+ export async function openTopCardDetail(page: Page): Promise<string> {
+   const title = (await app.cardTitle(page).innerText()).trim();
+diff --git a/e2e/specs/swipe-touch.spec.ts b/e2e/specs/swipe-touch.spec.ts
+new file mode 100644
+index 0000000..d22224d
+--- /dev/null
++++ b/e2e/specs/swipe-touch.spec.ts
+@@ -0,0 +1,73 @@
++import {
++  app,
++  expect,
++  listingsLeft,
++  resetBrowsing,
++  signIn,
++  test,
++  touchDrag,
++} from "../helpers/app.ts";
++
++/**
++ * TM09-131 acceptance criteria, on a touch screen:
++ *   - cards drag with touch (swipe.spec.ts covers the mouse)
++ *   - right = save, left = pass
++ *   - the page does not scroll while swiping
++ *
++ * Touch input only exists in the "mobile" project, which sets hasTouch.
++ */
++test.beforeEach(async ({ page }, testInfo) => {
++  test.skip(!testInfo.project.use.hasTouch, "touch input needs the mobile project");
++  const token = await signIn(page);
++  await page.goto("/");
++  await resetBrowsing(page, token);
++  await page.reload();
++  await expect(app.topCard(page)).toBeVisible();
++});
++
++test.describe("touch swiping", () => {
++  test("a touch drag to the right saves the listing", async ({ page }) => {
++    const title = await app.cardTitle(page).innerText();
++    const countBefore = await listingsLeft(page);
++
++    await touchDrag(page, 240, 0);
++
++    await expect(app.cardTitle(page)).not.toHaveText(title);
++    expect(await listingsLeft(page)).toBe(countBefore - 1);
++    await app.nav(page, "Saved").click();
++    await expect(page.locator(".app-main")).toContainText(title);
++  });
++
++  test("a touch drag to the left passes without saving", async ({ page }) => {
++    const title = await app.cardTitle(page).innerText();
++
++    await touchDrag(page, -240, 0);
++
++    await expect(app.cardTitle(page)).not.toHaveText(title);
++    await app.nav(page, "Saved").click();
++    await expect(page.locator(".app-main")).not.toContainText(title);
++  });
++
++  test("the page does not scroll while a card is being swiped", async ({ page }) => {
++    // A little vertical drift, the way a thumb actually moves.
++    const { maxScroll } = await touchDrag(page, 240, 24);
++    expect(maxScroll).toBe(0);
++  });
++
++  /**
++   * Regression guard. A vertical drag hands the gesture to the browser, which
++   * fires pointercancel at clientX 0. SwipeCard used to treat that like a
++   * release and read it as a long left drag, so trying to scroll on a card
++   * silently passed it.
++   */
++  test("a vertical touch drag on a card neither swipes nor opens it", async ({ page }) => {
++    const title = await app.cardTitle(page).innerText();
++    const countBefore = await listingsLeft(page);
++
++    await touchDrag(page, 0, -260);
++
++    await expect(app.cardTitle(page)).toHaveText(title);
++    expect(await listingsLeft(page)).toBe(countBefore);
++    await expect(page.locator(".detail-hero")).toHaveCount(0);
++  });
++});
+diff --git a/web/src/components/SwipeCard.tsx b/web/src/components/SwipeCard.tsx
+index b578d74..08c01c8 100644
+--- a/web/src/components/SwipeCard.tsx
++++ b/web/src/components/SwipeCard.tsx
+@@ -101,6 +101,18 @@ export function SwipeCard({ listing, interactive, flyOut, onSwiped, onOpen, dept
+     setDrag({ x: 0, y: 0, active: false });
+   }
+ 
++  function onPointerCancel(event: React.PointerEvent) {
++    if (pointerId.current !== event.pointerId) return;
++    pointerId.current = null;
++    // The browser cancels the pointer when it takes the gesture over, which on
++    // a touch screen means the student is scrolling vertically (touch-action:
++    // pan-y). That is never a decision about the listing, so snap back rather
++    // than reading the cancel as a release: Chrome reports a cancel at
++    // clientX 0, which used to look like a long left drag and passed the card.
++    moved.current = true;
++    setDrag({ x: 0, y: 0, active: false });
++  }
++
+   function activate(event: React.MouseEvent) {
+     // Opening lives on click, not pointerup, so keyboard and assistive-tech
+     // activation work as well as a tap. A drag also fires click, hence the guard.
+@@ -146,7 +158,7 @@ export function SwipeCard({ listing, interactive, flyOut, onSwiped, onOpen, dept
+       onPointerDown={onPointerDown}
+       onPointerMove={onPointerMove}
+       onPointerUp={onPointerUp}
+-      onPointerCancel={onPointerUp}
++      onPointerCancel={onPointerCancel}
+       onClick={activate}
+       role={interactive ? "button" : undefined}
+       tabIndex={interactive ? 0 : -1}
+-- 
+2.52.0.windows.1
+

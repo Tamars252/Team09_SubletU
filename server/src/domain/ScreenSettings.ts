@@ -104,9 +104,17 @@ export class ScreenSettings extends Data {
   }
 
   retrieveData(): boolean {
-    const fresh = ScreenSettings.retrieveForUser(this.userId);
-    Object.assign(this, fresh);
-    return true;
+    const stored = ScreenSettings.retrieveForUser(this.userId);
+    Object.assign(this, stored);
+    // retrieveForUser() hands back defaults for a user who has never saved
+    // settings, so "did we load anything" is a separate question.
+    return ScreenSettings.existsForUser(this.userId);
+  }
+
+  static existsForUser(userId: string): boolean {
+    return (
+      db.prepare("SELECT 1 FROM screen_settings WHERE user_id = ?").get(userId) !== undefined
+    );
   }
 
   static retrieveForUser(userId: string): ScreenSettings {

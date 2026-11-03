@@ -55,19 +55,26 @@ messagesRouter.post(
     if (listing.ownerId === user.id) throw badRequest("This is your own listing");
 
     const at = nowIso();
-    const existing = db
-      .prepare("SELECT * FROM conversations WHERE listing_id = ? AND guest_id = ?")
-      .get(listingId, user.id) as ConversationRow | undefined;
-
-    const conversationId = existing?.id ?? newId("cnv");
+    const candidateId = newId("cnv");
+    let conversationId = candidateId;
+    let created = false;
 
     transaction(() => {
-      if (!existing) {
-        db.prepare(
-          `INSERT INTO conversations (id, listing_id, guest_id, host_id, created_at, last_message_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-        ).run(conversationId, listingId, user.id, listing.ownerId, at, at);
-      }
+      // Insert-then-read inside the transaction: checking for an existing
+      // thread first raced two simultaneous requests into the
+      // UNIQUE (listing_id, guest_id) constraint and 500ed the loser.
+      db.prepare(
+        `INSERT INTO conversations (id, listing_id, guest_id, host_id, created_at, last_message_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (listing_id, guest_id) DO NOTHING`,
+      ).run(candidateId, listingId, user.id, listing.ownerId, at, at);
+
+      const row = db
+        .prepare("SELECT id FROM conversations WHERE listing_id = ? AND guest_id = ?")
+        .get(listingId, user.id) as { id: string };
+      conversationId = row.id;
+      created = row.id === candidateId;
+
       if (firstMessage) {
         db.prepare(
           `INSERT INTO messages (id, conversation_id, sender_id, body, created_at)
@@ -82,7 +89,7 @@ messagesRouter.post(
       db.prepare("DELETE FROM conversation_state WHERE conversation_id = ?").run(conversationId);
     });
 
-    res.status(existing ? 200 : 201).json({ conversationId });
+    res.status(created ? 201 : 200).json({ conversationId });
   }),
 );
 

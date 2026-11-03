@@ -1,0 +1,153 @@
+From f70c2a1a4eb2011d7308d6ce576a39b14a19fad4 Mon Sep 17 00:00:00 2001
+From: Tamar Shuster <tshuster@syr.edu>
+Date: Wed, 28 Oct 2026 16:04:02 -0400
+Subject: [PATCH] TM09-122 docs: add ADR-001, prototype and final technology
+ stack
+
+Evaluate technology options: decision record comparing a hosted BaaS
+(Supabase) with our own Express + SQLite API, single-file CDN React with
+React + Vite, and Google Maps / Mapbox / Leaflet / MapLibre for the map.
+
+- Prototype: single-file React from a CDN + Supabase, for speed
+- Final: Express + node:sqlite + React/Vite, all TypeScript
+- Map: MapLibre GL + OpenStreetMap tiles, Nominatim geocoding cached in
+  geocache. No paid API key, account or billing
+
+Builds on Tareq's draft (docs/TECH-DECISIONS.md, tareq/sprint-6-design-docs).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01U4Fq21d5VehQ9sdvMSuJ6d
+---
+ docs/adr-001-stack.md | 120 ++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 120 insertions(+)
+ create mode 100644 docs/adr-001-stack.md
+
+diff --git a/docs/adr-001-stack.md b/docs/adr-001-stack.md
+new file mode 100644
+index 0000000..7e60a27
+--- /dev/null
++++ b/docs/adr-001-stack.md
+@@ -0,0 +1,120 @@
++# ADR-001: Technology stack for the prototype and the final product
++
++| | |
++|---|---|
++| **Status** | Accepted |
++| **Jira** | TM09-122 — Evaluate technology options (epic TM09-84, Design & Architecture) |
++| **Author** | Tamar Shuster |
++| **Input from** | Tareq Haque (first draft, `docs/TECH-DECISIONS.md` on `tareq/sprint-6-design-docs`), Chris Martinez-Rivas, Chang Chang |
++| **Date** | October 28, 2026 |
++
++## Context
++
++SubletU has two jobs to do, and they pull in different directions.
++
++1. **The prototype** (Sprint 7). It has to put a swipeable listing deck in
++   front of students as fast as possible so we can test the idea. It will be
++   thrown away, so speed matters more than structure.
++2. **The final product** (Sprint 8 onward). It has to implement our class
++   diagram (`Data`, `ListingData`, `PhotoData`, `PricingData`, `RoomDetails`,
++   `ScreenSettings`, `ListingManager`) as real code, run on every teammate's
++   laptop and in CI, and be something we can test and explain in the final
++   demo.
++
++Constraints that apply to both:
++
++- **No paid services.** No API key that needs a credit card or billing account.
++  Four students, one semester, no budget.
++- **Runs on everyone's machine.** We develop on macOS and Windows. Setup should
++  be `npm install` and nothing else: no Docker, no database server.
++- **Testable in CI.** GitHub Actions has to be able to run the whole thing.
++- **The map is core.** Students choose sublets by distance to campus, so the
++  map and the geocoding have to be good, not an afterthought.
++
++## Options considered
++
++### Back end
++
++| Option | Speed to first demo | Fits the class diagram | Cost / lock-in | Local + CI | Verdict |
++|---|---|---|---|---|---|
++| **Hosted BaaS (Supabase)** | Fastest. Auth, Postgres and row-level security are ready on day one | Poor. Logic ends up in the client and in SQL policies, not in our classes | Free tier, but the project lives in someone's account. Tied to one vendor | Needs network and a hosted project. CI must hit a real instance | **Prototype** |
++| Firebase | Fast | Poor. Document store does not match our relational ERD | Free tier, vendor lock-in | Emulator works but adds setup | Rejected |
++| **Own API: Express + SQLite** (TypeScript) | Slower. We write auth, routes and the schema ourselves | Direct. Each diagram class becomes a TypeScript class with `extends` | Free, nothing hosted, no account | One file database. Runs offline, CI gets a fresh temp DB per run | **Final** |
++| Own API: Express + Postgres | Same as above | Direct | Free, but needs a Postgres server | Every teammate and CI needs Postgres running | Rejected (setup cost, no benefit at our scale) |
++| Spring Boot / Django | Slower | Good | Free | Adds a second language and toolchain next to the React front end | Rejected (one language across the stack is simpler) |
++
++SQLite comes from Node's built-in `node:sqlite` module (Node 22.6+), so the
++database needs no native package to compile. This was the main Windows pain
++point we wanted to avoid. Node also strips TypeScript types itself and runs
++the `.ts` files directly, so the server has no build step.
++
++### Front end
++
++| Option | Notes | Verdict |
++|---|---|---|
++| **Single HTML file, React + Babel from a CDN** | No install and no build. Open the file and it runs. Fine for a throwaway, but there's no type checking, no modules, no tests, and everything recompiles in the browser | **Prototype** |
++| **React + Vite** (TypeScript) | Fast dev server, real modules, type checking, code splitting (the map bundle loads only on the Map tab), and the Playwright suite runs against the production build | **Final** |
++| Next.js | Server rendering and routing we don't need. Our app is a single-page app behind a login | Rejected |
++| React Native / Expo | Real native app, but a second build chain and device testing for every feature. A mobile-first web app reaches every phone without an app store | Rejected for this course. Revisit after the semester |
++
++### Map and geocoding
++
++The requirement: **a map provider chosen with no paid API key required.**
++
++| Option | Key / billing | Notes | Verdict |
++|---|---|---|---|
++| Google Maps JavaScript API | API key **and** a billing account with a card | The prototype used it, with the key pasted into the HTML. A key committed to a public repo can be copied and run up charges on the owner's account | Rejected |
++| Mapbox GL JS | Access token and account | Polished, but our usage would be tied to one person's token | Rejected |
++| Leaflet + OpenStreetMap tiles | None | Simple and keyless, but raster-only and less smooth on phones | Fallback |
++| **MapLibre GL + OpenStreetMap tiles** | **None** | Open-source fork of Mapbox GL JS. WebGL, smooth pinch-zoom on phones, and it accepts any tile URL. We can switch to vector tiles later by changing one line (`createOsmStyle()` in `web/src/components/MapCanvas.tsx`) | **Chosen** |
++| **Nominatim** (OSM geocoder) | **None** | Free, but its usage policy allows at most 1 request/second and requires attribution. We serialize requests to 1/sec and cache every result in the `geocache` table, so each address is looked up once | **Chosen** |
++
++## Decision
++
++**Prototype stack (Sprint 7):** a single-file `prototype.html` using React from
++a CDN and Supabase for auth and data. The goal is speed for user testing. It is
++archived at `legacy/prototype.html` and is not built on.
++
++**Final stack (Sprint 8 onward):**
++
++- **Server:** Node 22.6+, TypeScript, Express, SQLite via `node:sqlite`.
++  Runtime dependencies are only `express` and `cors`.
++- **Web:** React 18 + Vite, TypeScript.
++- **Map:** MapLibre GL rendering OpenStreetMap tiles. Geocoding through
++  Nominatim, cached in `geocache`. **No API key, no account, no billing.**
++- **Tests:** Node's built-in test runner for the domain and HTTP layers, and
++  Playwright end-to-end tests in mobile and desktop viewports. All of it runs in
++  GitHub Actions.
++
++## Consequences
++
++**Good**
++
++- Every class in the class diagram is a real class in `server/src/domain/`, so
++  the design and the code can be checked against each other.
++- Setup is `npm install`, then `npm run seed`, then `npm run dev`, on macOS and
++  Windows alike, with no hosted service to share credentials for.
++- No API keys or secrets in the front end, and nothing that can run up a bill.
++- CI runs the whole app, including the database, with nothing external except
++  map tiles.
++
++**Costs we accept**
++
++- We write and maintain our own auth (password hashing, sessions, email
++  verification, Microsoft SSO). Supabase gave us this for free in the
++  prototype.
++- SQLite is a single file on a single server. That's fine for a class project
++  and a demo, but production at scale would mean moving to Postgres. Keeping
++  all SQL in the route and domain layer keeps that move contained.
++- OpenStreetMap's tile servers are not meant for heavy production traffic. If
++  SubletU outgrew a demo, we would point `createOsmStyle()` at a hosted tile
++  provider or self-host tiles.
++- Nominatim's 1 request/second limit makes the first seed slow (about 24
++  seconds for 24 listings). The cache makes every later run instant.
++
++## Follow-ups
++
++- Production architecture decision record (`docs/adr-002-rewrite.md`), owned by
++  Tareq Haque, builds on this ADR.
++- Retire `docs/TECH-DECISIONS.md` on Tareq's branch once this ADR is merged, so
++  the decision lives in one place.
+-- 
+2.52.0.windows.1
+

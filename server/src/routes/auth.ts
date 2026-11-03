@@ -9,24 +9,32 @@ import {
   requireString,
   unauthorized,
 } from "../lib/http.ts";
-import { currentUser, loadUserById, requireAuth } from "../middleware/auth.ts";
+import { emailKey, rateLimit } from "../lib/rateLimit.ts";
+import { initialsFor } from "../lib/text.ts";
+import { currentUser, loadUserById, requireAuth, tokenVersionFor } from "../middleware/auth.ts";
 import { ScreenSettings } from "../domain/ScreenSettings.ts";
 
 export const authRouter = Router();
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-function initialsFor(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0].toUpperCase())
-    .join("");
-}
+/**
+ * Credential endpoints are the only ones worth guessing at, so they are the
+ * only ones throttled. Keyed on IP + email so one attacker cannot lock out an
+ * account they do not own by hammering it from elsewhere.
+ */
+const credentialLimiter = rateLimit({ limit: 10, windowMs: 15 * 60_000, keyFor: emailKey });
+const signupLimiter = rateLimit({ limit: 5, windowMs: 60 * 60_000 });
+// Runs behind requireAuth, so the signed-in account is the natural bucket.
+const passwordLimiter = rateLimit({
+  limit: 10,
+  windowMs: 15 * 60_000,
+  keyFor: (req) => req.user?.id ?? req.ip ?? "unknown",
+});
 
 authRouter.post(
   "/register",
+  signupLimiter,
   asyncHandler(async (req, res) => {
     const body = req.body as Record<string, unknown>;
     const email = requireString(body, "email", { min: 5, max: 254 }).toLowerCase();
@@ -55,27 +63,31 @@ authRouter.post(
     settings.payload.university = university;
     settings.storeData();
 
-    res.status(201).json({ token: issueToken(id, email), user: loadUserById(id) });
+    res.status(201).json({ token: issueToken(id, email, 0), user: loadUserById(id) });
   }),
 );
 
 authRouter.post(
   "/login",
+  credentialLimiter,
   asyncHandler(async (req, res) => {
     const body = req.body as Record<string, unknown>;
     const email = requireString(body, "email", { min: 5, max: 254 }).toLowerCase();
     const password = requireString(body, "password", { min: 1, max: 200 });
 
-    const row = db.prepare("SELECT id, password_hash FROM users WHERE email = ?").get(email) as
-      | { id: string; password_hash: string }
-      | undefined;
+    const row = db
+      .prepare("SELECT id, password_hash, token_version FROM users WHERE email = ?")
+      .get(email) as { id: string; password_hash: string; token_version: number } | undefined;
 
     // Same message either way so the endpoint can't be used to enumerate accounts.
     if (!row || !verifyPassword(password, row.password_hash)) {
       throw unauthorized("Email or password is incorrect");
     }
 
-    res.json({ token: issueToken(row.id, email), user: loadUserById(row.id) });
+    res.json({
+      token: issueToken(row.id, email, row.token_version),
+      user: loadUserById(row.id),
+    });
   }),
 );
 
@@ -108,6 +120,7 @@ authRouter.patch(
 authRouter.post(
   "/password",
   requireAuth,
+  passwordLimiter,
   asyncHandler(async (req, res) => {
     const user = currentUser(req);
     const body = req.body as Record<string, unknown>;
@@ -121,10 +134,13 @@ authRouter.post(
       throw unauthorized("Current password is incorrect");
     }
 
-    db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(
-      hashPassword(next),
-      user.id,
-    );
-    res.json({ ok: true });
+    // Bumping token_version invalidates every token issued so far, so a
+    // password change signs out other devices. The caller gets a fresh token
+    // in exchange and stays signed in here.
+    db.prepare(
+      "UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?",
+    ).run(hashPassword(next), user.id);
+
+    res.json({ ok: true, token: issueToken(user.id, user.email, tokenVersionFor(user.id) ?? 0) });
   }),
 );
