@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { ApiError, api } from "./api/client.ts";
+import { ProtectedRoute } from "./components/ProtectedRoute.tsx";
+import { HOME_PATH, REGISTER_PATH, SIGN_IN_PATH } from "./auth/guard.ts";
+import { Register } from "./screens/Register.tsx";
+import { SignIn } from "./screens/SignIn.tsx";
+import { useAuth } from "./state/AuthContext.tsx";
 import type { Filters, Listing, Reference } from "./api/types.ts";
 import { EMPTY_FILTERS, activeFilterCount } from "./api/types.ts";
 import { FilterSheet } from "./components/FilterSheet.tsx";
@@ -11,14 +17,15 @@ type Results =
   | { kind: "error"; message: string };
 
 /**
- * Front-end shell. Screens (sign-in, swipe deck, map, post, saved, messages,
+ * The signed-in shell. Screens (swipe deck, map, post, saved, messages,
  * profile) plug into `app-main` in later stories.
  *
  * The filter state lives here so every screen that lists listings (the deck,
  * the map) reads the same filters. Until the deck lands, the main area shows
  * how many listings match and the first few titles.
  */
-export function App() {
+function AppShell() {
+  const { user, logout } = useAuth();
   const [reference, setReference] = useState<Reference | null>(null);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
@@ -67,6 +74,9 @@ export function App() {
             <IconSliders size={19} />
             {filterCount > 0 && <span className="badge">{filterCount}</span>}
           </button>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={logout}>
+            Sign out
+          </button>
         </div>
       </header>
 
@@ -76,6 +86,7 @@ export function App() {
 
           {results.kind === "ok" && (
             <>
+              {user && <p className="muted">Signed in as {user.name}</p>}
               <h3 data-testid="match-count">
                 {results.total === 1 ? "1 listing" : `${results.total} listings`}
                 {filterCount === 0 ? " near campus" : results.total === 1 ? " matches your filters" : " match your filters"}
@@ -120,5 +131,25 @@ export function App() {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Routes. The auth screens are public; everything else sits behind
+ * ProtectedRoute, which sends signed-out visitors to the sign-in screen and
+ * remembers where they were headed.
+ */
+export function App() {
+  return (
+    <Routes>
+      <Route path={SIGN_IN_PATH} element={<SignIn />} />
+      <Route path={REGISTER_PATH} element={<Register />} />
+      <Route element={<ProtectedRoute />}>
+        <Route path={HOME_PATH} element={<AppShell />} />
+      </Route>
+      {/* Unknown URLs go through the guard rather than 404-ing, so a stale
+          deep link still ends at sign-in when there is no session. */}
+      <Route path="*" element={<Navigate to={HOME_PATH} replace />} />
+    </Routes>
   );
 }
