@@ -1,0 +1,132 @@
+/**
+ * Drives the real Express stack over a real socket, without supertest.
+ *
+ * `createApp()` builds the app without binding a port, so a test can listen on
+ * port 0, talk to it with the global fetch, and close it again. That keeps the
+ * middleware chain honest — CORS, the JSON body limit, attachUser, requireAuth
+ * and the error middleware all run exactly as they do in production — at the
+ * cost of nothing but an ephemeral port.
+ *
+ * Import "./env.ts" BEFORE this module: createApp pulls in src/db.ts, which
+ * opens the database at import time.
+ */
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { createApp } from "../../src/app.ts";
+import { db, nowIso } from "../../src/db.ts";
+import { issueToken, newId } from "../../src/lib/crypto.ts";
+
+export type TestServer = {
+  /** Origin to prefix request paths with, e.g. http://127.0.0.1:53124 */
+  url: string;
+  close: () => Promise<void>;
+};
+
+export function startTestServer(): Promise<TestServer> {
+  return new Promise((resolve) => {
+    // 127.0.0.1 rather than the default: on Windows, binding the wildcard
+    // address can trip a firewall prompt in the middle of a test run.
+    const server: Server = createApp().listen(0, "127.0.0.1", () => {
+      const { port } = server.address() as AddressInfo;
+      resolve({
+        url: `http://127.0.0.1:${port}`,
+        close: () =>
+          new Promise<void>((done) => {
+            // fetch keeps its sockets alive, and server.close() waits for
+            // every one of them. Without this the test process hangs until
+            // the agent's keep-alive timeout instead of exiting.
+            server.closeAllConnections();
+            server.close(() => done());
+          }),
+      });
+    });
+  });
+}
+
+/** A user row plus a bearer token for it. */
+export function seedUser(name = "Test Host"): { id: string; token: string } {
+  const id = newId("usr");
+  const email = `${id}@syr.edu`;
+  db.prepare(
+    `INSERT INTO users (id, email, name, password_hash, created_at)
+     VALUES (?, ?, ?, 'x', ?)`,
+  ).run(id, email, name, nowIso());
+  return { id, token: issueToken(id, email, 0) };
+}
+
+/** An active listing owned by `ownerId`, with no photos. */
+export function seedListing(ownerId: string): string {
+  const id = newId("lst");
+  const now = nowIso();
+  db.prepare(
+    `INSERT INTO listings (id, owner_id, title, address, zip, description,
+                           lat, lng, geocode_source, status, created_at, updated_at)
+     VALUES (?, ?, 'Sunny room near campus', '100 Default St', '13210',
+             'Bright furnished room.', 43.0377, -76.1341, 'fallback', 'active', ?, ?)`,
+  ).run(id, ownerId, now, now);
+  return id;
+}
+
+/* ------------------------------------------------------------------ fixtures */
+
+/** A real 1x1 PNG — the same fixture the domain tests use. */
+export const PNG_1PX =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+/**
+ * JPEG and WebP headers followed by filler. Only the magic bytes are read —
+ * nothing decodes these — so a real encoder would be weight for no gain.
+ */
+const JPEG_BYTES = Buffer.concat([
+  Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00]),
+  Buffer.alloc(32, 0x20),
+]);
+
+const WEBP_BYTES = Buffer.concat([
+  Buffer.from("RIFF", "latin1"),
+  Buffer.from([0x24, 0x00, 0x00, 0x00]),
+  Buffer.from("WEBPVP8 ", "latin1"),
+  Buffer.alloc(24, 0x20),
+]);
+
+export const JPEG_SMALL = `data:image/jpeg;base64,${JPEG_BYTES.toString("base64")}`;
+export const WEBP_SMALL = `data:image/webp;base64,${WEBP_BYTES.toString("base64")}`;
+
+/** Declared as a PNG, but the bytes are a DOS/PE header - not an image. */
+export const PNG_LIAR = `data:image/png;base64,${Buffer.from([
+  0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
+]).toString("base64")}`;
+
+/** Over MAX_PHOTO_BYTES (4096 in the test env), under the JSON body limit. */
+export const OVERSIZED_PNG = `data:image/png;base64,${Buffer.alloc(8192, 7).toString("base64")}`;
+
+/* ------------------------------------------------------------------ requests */
+
+export type ApiResponse = { status: number; body: Record<string, unknown> };
+
+/** JSON request/response, with the token attached when one is given. */
+export async function api(
+  server: TestServer,
+  method: string,
+  path: string,
+  opts: { token?: string; body?: unknown } = {},
+): Promise<ApiResponse> {
+  const headers: Record<string, string> = {};
+  if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
+  if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+
+  const res = await fetch(`${server.url}${path}`, {
+    method,
+    headers,
+    body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+  });
+
+  const text = await res.text();
+  let body: Record<string, unknown> = {};
+  try {
+    body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  } catch {
+    body = { raw: text };
+  }
+  return { status: res.status, body };
+}

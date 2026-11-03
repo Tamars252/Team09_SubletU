@@ -5,12 +5,13 @@ import { ListingData } from "../domain/ListingData.ts";
 import type { ListingFilter, ListingSort } from "../domain/ListingData.ts";
 import type { SubmitListingInput } from "../domain/ListingManager.ts";
 import { ListingManager, MAX_PHOTOS_PER_LISTING } from "../domain/ListingManager.ts";
-import { PhotoData } from "../domain/PhotoData.ts";
+import { PhotoData, PhotoFormatError } from "../domain/PhotoData.ts";
 import { campusAnchor } from "../lib/geocode.ts";
 import {
   asyncHandler,
   badRequest,
   forbidden,
+  HttpError,
   notFound,
   optionalNumber,
   optionalString,
@@ -346,6 +347,19 @@ listingsRouter.delete(
 
 /* ------------------------------------------------------------------ photos */
 
+/**
+ * Maps a decoder rejection onto the status code that describes it: 413 for a
+ * payload over MAX_PHOTO_BYTES, 415 for something that is not one of the
+ * image formats we accept, 400 for a body that is not a data URL at all.
+ */
+function photoRejection(err: unknown): HttpError {
+  if (err instanceof PhotoFormatError) {
+    if (err.reason === "too_large") return new HttpError(413, err.message);
+    if (err.reason === "unsupported_type") return new HttpError(415, err.message);
+  }
+  return badRequest((err as Error).message);
+}
+
 listingsRouter.post(
   "/:id/photos",
   requireAuth,
@@ -355,10 +369,13 @@ listingsRouter.post(
     if (!listing) throw notFound("Listing not found");
     if (listing.ownerId !== user.id) throw forbidden("You can only add photos to your own listing");
 
-    const dataUrl = requireString(req.body as Record<string, unknown>, "photo", {
-      min: 32,
-      max: 12_000_000,
-    });
+    // Deliberately not requireString's max: a length check here would turn an
+    // over-sized photo into a 400 before the decoder could call it a 413.
+    const raw = (req.body as Record<string, unknown>).photo;
+    if (typeof raw !== "string") throw badRequest(`"photo" is required`);
+    const dataUrl = raw.trim();
+    if (dataUrl.length < 32) throw badRequest(`"photo" must be a base64 data URL`);
+
     if (listing.photoData.length >= MAX_PHOTOS_PER_LISTING) {
       throw badRequest(`A listing can have at most ${MAX_PHOTOS_PER_LISTING} photos`);
     }
@@ -368,7 +385,7 @@ listingsRouter.post(
       decoded = PhotoData.decodeDataUrl(dataUrl);
     } catch (err) {
       // Nothing has reached the uploads directory at this point.
-      throw badRequest((err as Error).message);
+      throw photoRejection(err);
     }
 
     const photo = PhotoData.persist(listing.listingId, decoded, listing.photoData.length);
@@ -388,11 +405,11 @@ listingsRouter.delete(
   requireAuth,
   asyncHandler(async (req, res) => {
     const user = currentUser(req);
-    const row = db.prepare("SELECT owner_id FROM listings WHERE id = ?").get(req.params.id) as
-      | { owner_id: string }
-      | undefined;
-    if (!row) throw notFound("Listing not found");
-    if (row.owner_id !== user.id) throw forbidden("You can only edit your own listing");
+    const listing = ListingData.retrieveById(req.params.id);
+    if (!listing) throw notFound("Listing not found");
+    if (listing.ownerId !== user.id) {
+      throw forbidden("You can only remove photos from your own listing");
+    }
 
     if (!PhotoData.deleteById(req.params.photoId, req.params.id)) throw notFound("Photo not found");
     res.json({ ok: true });

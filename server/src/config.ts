@@ -43,6 +43,10 @@ function resolveFromServer(p: string): string {
   return path.isAbsolute(p) ? p : path.resolve(SERVER_ROOT, p);
 }
 
+// Read once: both the photo limit and the body limit derived from it need it,
+// and writing the fallback twice invites the two drifting apart.
+const MAX_PHOTO_BYTES = int("MAX_PHOTO_BYTES", 6 * 1024 * 1024);
+
 export const config = {
   port: int("PORT", 4000),
   corsOrigins: str("CORS_ORIGIN", "http://localhost:5173")
@@ -54,7 +58,12 @@ export const config = {
   settingsSecret: str("SETTINGS_SECRET", "dev-only-change-me-too"),
   databaseFile: resolveFromServer(str("DATABASE_FILE", "./data/subletu.db")),
   uploadDir: resolveFromServer(str("UPLOAD_DIR", "./uploads")),
-  maxPhotoBytes: int("MAX_PHOTO_BYTES", 6 * 1024 * 1024),
+  maxPhotoBytes: MAX_PHOTO_BYTES,
+  // Photos arrive as base64 data URLs inside a JSON body, so the body limit
+  // has to clear MAX_PHOTO_BYTES inflated by base64's 4/3, plus the data:
+  // prefix and the JSON envelope. Derived rather than hardcoded so raising
+  // MAX_PHOTO_BYTES cannot silently leave the body limit below it.
+  jsonBodyLimitBytes: Math.ceil((MAX_PHOTO_BYTES * 4) / 3) + 64 * 1024,
   nominatimUrl: str("NOMINATIM_URL", "https://nominatim.openstreetmap.org"),
   nominatimUserAgent: str(
     "NOMINATIM_USER_AGENT",
