@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, nowIso, transaction } from "../db.ts";
-import { ListingData } from "../domain/ListingData.ts";
+import { DECK_EXCLUSIONS_SQL, ListingData } from "../domain/ListingData.ts";
 import { newId } from "../lib/crypto.ts";
 import { asyncHandler, badRequest, notFound, requireString } from "../lib/http.ts";
 import { currentUser, requireAuth } from "../middleware/auth.ts";
@@ -8,6 +8,15 @@ import { currentUser, requireAuth } from "../middleware/auth.ts";
 export const swipesRouter = Router();
 
 swipesRouter.use(requireAuth);
+
+const countDeck = db.prepare(
+  `SELECT COUNT(*) AS n FROM listings l WHERE l.status = 'active' AND ${DECK_EXCLUSIONS_SQL}`,
+);
+
+/** How many listings are left in this renter's deck, counted the way the deck is built. */
+function deckRemaining(userId: string): number {
+  return (countDeck.get(userId, userId, userId) as { n: number }).n;
+}
 
 /**
  * Record a swipe. Right also saves the listing, which is what makes the deck
@@ -50,15 +59,12 @@ swipesRouter.post(
       }
     });
 
-    const remaining = db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM listings l
-         WHERE l.status = 'active' AND l.owner_id <> ?
-           AND l.id NOT IN (SELECT listing_id FROM swipes WHERE user_id = ?)`,
-      )
-      .get(user.id, user.id) as { n: number };
-
-    res.status(201).json({ ok: true, direction, saved: direction === "right", remaining: remaining.n });
+    res.status(201).json({
+      ok: true,
+      direction,
+      saved: direction === "right",
+      remaining: deckRemaining(user.id),
+    });
   }),
 );
 
@@ -67,11 +73,16 @@ swipesRouter.post(
   "/undo",
   asyncHandler(async (req, res) => {
     const user = currentUser(req);
+    // Only a swipe on a listing that is still active can be undone: anything
+    // else could not go back into the deck, so the card would be a dead end.
     const last = db
       .prepare(
-        "SELECT id, listing_id FROM swipes WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
+        `SELECT s.id, s.listing_id, s.direction FROM swipes s
+         JOIN listings l ON l.id = s.listing_id
+         WHERE s.user_id = ? AND l.status = 'active'
+         ORDER BY s.created_at DESC, s.rowid DESC LIMIT 1`,
       )
-      .get(user.id) as { id: string; listing_id: string } | undefined;
+      .get(user.id) as { id: string; listing_id: string; direction: string } | undefined;
     if (!last) {
       res.json({ ok: false, message: "Nothing to undo" });
       return;
@@ -79,13 +90,18 @@ swipesRouter.post(
 
     transaction(() => {
       db.prepare("DELETE FROM swipes WHERE id = ?").run(last.id);
-      db.prepare("DELETE FROM saved_listings WHERE user_id = ? AND listing_id = ?").run(
-        user.id,
-        last.listing_id,
-      );
+      // Undoing a right swipe takes back the save it made. Undoing a pass must
+      // not touch the Saved tab.
+      if (last.direction === "right") {
+        db.prepare("DELETE FROM saved_listings WHERE user_id = ? AND listing_id = ?").run(
+          user.id,
+          last.listing_id,
+        );
+      }
     });
 
     const listing = ListingData.retrieveById(last.listing_id);
+    listing?.setDistanceFromCampus(user.university);
     res.json({ ok: true, listing: listing?.toJSON() ?? null });
   }),
 );
@@ -95,10 +111,17 @@ swipesRouter.delete(
   "/",
   asyncHandler(async (req, res) => {
     const user = currentUser(req);
-    const keepSaved = req.query.keepSaved !== "false";
+    // Per docs/api-contract.md: no query is a full reset, and ?keepSaved=true
+    // clears only the passes. Right swipes stay with their saves, so a saved
+    // listing keeps its like and stays out of the deck.
+    const keepSaved = req.query.keepSaved === "true";
     transaction(() => {
-      db.prepare("DELETE FROM swipes WHERE user_id = ?").run(user.id);
-      if (!keepSaved) db.prepare("DELETE FROM saved_listings WHERE user_id = ?").run(user.id);
+      if (keepSaved) {
+        db.prepare("DELETE FROM swipes WHERE user_id = ? AND direction = 'left'").run(user.id);
+      } else {
+        db.prepare("DELETE FROM swipes WHERE user_id = ?").run(user.id);
+        db.prepare("DELETE FROM saved_listings WHERE user_id = ?").run(user.id);
+      }
     });
     res.json({ ok: true, keptSaved: keepSaved });
   }),
@@ -117,19 +140,11 @@ swipesRouter.get(
          FROM swipes WHERE user_id = ?`,
       )
       .get(user.id) as { likes: number | null; passes: number | null; total: number };
-    const remaining = db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM listings
-         WHERE status = 'active' AND owner_id <> ?
-           AND id NOT IN (SELECT listing_id FROM swipes WHERE user_id = ?)`,
-      )
-      .get(user.id, user.id) as { n: number };
-
     res.json({
       likes: row.likes ?? 0,
       passes: row.passes ?? 0,
       total: row.total ?? 0,
-      remaining: remaining.n,
+      remaining: deckRemaining(user.id),
     });
   }),
 );

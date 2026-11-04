@@ -1,0 +1,946 @@
+From 66016d3c77118c6ef03396fd44a6bf7a2ba3a0b4 Mon Sep 17 00:00:00 2001
+From: Team09 <a@b>
+Date: Wed, 4 Nov 2026 01:18:09 +0000
+Subject: [PATCH] feat(web): listing detail view, opened from a card by tap or
+ Enter
+
+---
+ web/src/App.tsx                    |  13 +-
+ web/src/components/ListingCard.tsx |  37 +++
+ web/src/lib/listing.ts             |  91 +++++++
+ web/src/screens/ListingDetail.tsx  | 379 +++++++++++++++++++++++++++++
+ web/src/styles/theme.css           | 243 ++++++++++++++++++
+ web/test/listing.test.ts           |  96 ++++++++
+ 6 files changed, 856 insertions(+), 3 deletions(-)
+ create mode 100644 web/src/components/ListingCard.tsx
+ create mode 100644 web/src/lib/listing.ts
+ create mode 100644 web/src/screens/ListingDetail.tsx
+ create mode 100644 web/test/listing.test.ts
+
+diff --git a/web/src/App.tsx b/web/src/App.tsx
+index dee5f8c..3616ee6 100644
+--- a/web/src/App.tsx
++++ b/web/src/App.tsx
+@@ -10,6 +10,9 @@ import type { Filters, Listing, Reference } from "./api/types.ts";
+ import { EMPTY_FILTERS, activeFilterCount } from "./api/types.ts";
+ import { FilterSheet } from "./components/FilterSheet.tsx";
+ import { IconSliders } from "./components/Icons.tsx";
++import { ListingCard } from "./components/ListingCard.tsx";
++import { LISTING_PATH } from "./lib/listing.ts";
++import { ListingDetail } from "./screens/ListingDetail.tsx";
+ 
+ type Results =
+   | { kind: "loading" }
+@@ -22,7 +25,8 @@ type Results =
+  *
+  * The filter state lives here so every screen that lists listings (the deck,
+  * the map) reads the same filters. Until the deck lands, the main area shows
+- * how many listings match and the first few titles.
++ * how many listings match and the first few as cards that open the detail
++ * view.
+  */
+ function AppShell() {
+   const { user, logout } = useAuth();
+@@ -92,9 +96,11 @@ function AppShell() {
+                 {filterCount === 0 ? " near campus" : results.total === 1 ? " matches your filters" : " match your filters"}
+               </h3>
+               {results.listings.length > 0 && (
+-                <ul className="muted" style={{ listStyle: "none", padding: 0, margin: 0 }}>
++                <ul className="listing-list">
+                   {results.listings.map((l) => (
+-                    <li key={l.id}>{l.title}</li>
++                    <li key={l.id}>
++                      <ListingCard listing={l} />
++                    </li>
+                   ))}
+                 </ul>
+               )}
+@@ -146,6 +152,7 @@ export function App() {
+       <Route path={REGISTER_PATH} element={<Register />} />
+       <Route element={<ProtectedRoute />}>
+         <Route path={HOME_PATH} element={<AppShell />} />
++        <Route path={LISTING_PATH} element={<ListingDetail />} />
+       </Route>
+       {/* Unknown URLs go through the guard rather than 404-ing, so a stale
+           deep link still ends at sign-in when there is no session. */}
+diff --git a/web/src/components/ListingCard.tsx b/web/src/components/ListingCard.tsx
+new file mode 100644
+index 0000000..2c82c00
+--- /dev/null
++++ b/web/src/components/ListingCard.tsx
+@@ -0,0 +1,37 @@
++import { Link } from "react-router-dom";
++import type { Listing } from "../api/types.ts";
++import { dateRange, listingPath, money, sortedPhotos } from "../lib/listing.ts";
++
++/**
++ * A compact listing summary that opens the full detail view.
++ *
++ * It is a real link rather than a div with a click handler, so a tap, a click
++ * and Enter on the keyboard all open it, and it is announced as a link
++ * (NFR-5.1). The swipe deck's card can open the same route with
++ * `navigate(listingPath(id))`.
++ */
++export function ListingCard({ listing }: { listing: Listing }) {
++  const photo = sortedPhotos(listing.photos)[0]?.fileUrl ?? null;
++  const pricing = listing.pricing;
++
++  return (
++    <Link to={listingPath(listing.id)} className="listing-card">
++      <span
++        className="listing-card-photo"
++        style={photo ? { backgroundImage: `url(${photo})` } : undefined}
++        aria-hidden="true"
++      />
++      <span className="listing-card-text">
++        <span className="listing-card-title">{listing.title}</span>
++        <span className="listing-card-meta">
++          {pricing ? `${money(pricing.monthlyRent)}/mo` : "Price not listed"}
++        </span>
++        {pricing && (
++          <span className="listing-card-meta">
++            {dateRange(pricing.availableFrom, pricing.availableTo)}
++          </span>
++        )}
++      </span>
++    </Link>
++  );
++}
+diff --git a/web/src/lib/listing.ts b/web/src/lib/listing.ts
+new file mode 100644
+index 0000000..1b6664b
+--- /dev/null
++++ b/web/src/lib/listing.ts
+@@ -0,0 +1,91 @@
++/**
++ * Listing detail view: the formatting the detail screen and the listing cards
++ * share, kept free of React so it can be tested without a DOM.
++ */
++
++/** Route for one listing's full details. */
++export const LISTING_PATH = "/listings/:id";
++
++export function listingPath(id: string): string {
++  return `/listings/${encodeURIComponent(id)}`;
++}
++
++const wholeDollars = new Intl.NumberFormat("en-US", {
++  style: "currency",
++  currency: "USD",
++  maximumFractionDigits: 0,
++});
++
++export function money(amount: number): string {
++  return wholeDollars.format(amount);
++}
++
++/**
++ * Availability dates arrive as `YYYY-MM-DD`. `new Date("2026-05-15")` is
++ * midnight UTC, which is still May 14 in Syracuse, so formatting it in local
++ * time shows the wrong day. Formatting in UTC keeps the date the host typed.
++ */
++function parseDay(day: string): Date | null {
++  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
++  if (!match) return null;
++  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
++}
++
++const monthDay = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
++const monthDayYear = new Intl.DateTimeFormat("en-US", {
++  month: "short",
++  day: "numeric",
++  year: "numeric",
++  timeZone: "UTC",
++});
++
++export function formatDay(day: string): string {
++  const date = parseDay(day);
++  return date ? monthDayYear.format(date) : day;
++}
++
++/**
++ * "May 15 – Aug 15, 2026", or "Dec 20, 2026 – Jan 10, 2027" across a year
++ * boundary. Exact dates, never "summer" (usability finding F-6).
++ */
++export function dateRange(from: string, to: string): string {
++  const start = parseDay(from);
++  const end = parseDay(to);
++  if (!start || !end) return `${from} – ${to}`;
++  const sameYear = start.getUTCFullYear() === end.getUTCFullYear();
++  return `${sameYear ? monthDay.format(start) : monthDayYear.format(start)} – ${monthDayYear.format(end)}`;
++}
++
++export function bedroomsLabel(bedrooms: number): string {
++  if (bedrooms === 0) return "Studio";
++  return bedrooms === 1 ? "1 bedroom" : `${bedrooms} bedrooms`;
++}
++
++export function bathroomsLabel(bathrooms: number): string {
++  return bathrooms === 1 ? "1 bath" : `${bathrooms} baths`;
++}
++
++export function distanceLabel(miles: number | null, university: string): string | null {
++  if (miles === null) return null;
++  return `${miles.toFixed(1)} mi from ${university}`;
++}
++
++export function hostRatingLabel(rating: number, reviewCount: number): string {
++  if (reviewCount === 0) return "No reviews yet";
++  return `${rating.toFixed(1)} from ${reviewCount} ${reviewCount === 1 ? "review" : "reviews"}`;
++}
++
++/**
++ * Photos in the host's order. The API sends `sortOrder`; the array order is
++ * not part of the contract, so the cover photo is the lowest sortOrder, not
++ * whatever happens to be first.
++ */
++export function sortedPhotos<T extends { sortOrder: number }>(photos: T[]): T[] {
++  return [...photos].sort((a, b) => a.sortOrder - b.sortOrder);
++}
++
++/** Steps through photos and wraps at both ends, so Next on the last goes to the first. */
++export function stepPhoto(index: number, delta: number, count: number): number {
++  if (count <= 0) return 0;
++  return (((index + delta) % count) + count) % count;
++}
+diff --git a/web/src/screens/ListingDetail.tsx b/web/src/screens/ListingDetail.tsx
+new file mode 100644
+index 0000000..4415702
+--- /dev/null
++++ b/web/src/screens/ListingDetail.tsx
+@@ -0,0 +1,379 @@
++import { useEffect, useRef, useState } from "react";
++import type { KeyboardEvent } from "react";
++import { useLocation, useNavigate, useParams } from "react-router-dom";
++import { ApiError, api } from "../api/client.ts";
++import type { Listing, Photo } from "../api/types.ts";
++import { HOME_PATH } from "../auth/guard.ts";
++import {
++  IconArrowLeft,
++  IconBath,
++  IconBed,
++  IconCheck,
++  IconPin,
++  IconShield,
++  IconStar,
++  IconUser,
++  IconX,
++} from "../components/Icons.tsx";
++import {
++  bathroomsLabel,
++  bedroomsLabel,
++  distanceLabel,
++  formatDay,
++  hostRatingLabel,
++  money,
++  sortedPhotos,
++  stepPhoto,
++} from "../lib/listing.ts";
++import { useAuth } from "../state/AuthContext.tsx";
++
++type State =
++  | { kind: "loading" }
++  | { kind: "ok"; listing: Listing }
++  | { kind: "missing" }
++  | { kind: "error"; message: string };
++
++/**
++ * Listing detail view (FR-2.4): photos, price, dates, room details and host.
++ *
++ * Keyboard access (NFR-5.1, NFR-5.2): the card that opens this screen is a
++ * link, so Enter works; focus moves to the title when the listing loads;
++ * every control is a real button with a name; and the arrow keys step
++ * through the photos while focus is anywhere in the gallery.
++ */
++export function ListingDetail() {
++  const { id = "" } = useParams();
++  const navigate = useNavigate();
++  const location = useLocation();
++  const { user } = useAuth();
++  const [state, setState] = useState<State>({ kind: "loading" });
++  const [attempt, setAttempt] = useState(0);
++  const heading = useRef<HTMLHeadingElement>(null);
++
++  useEffect(() => {
++    let stale = false;
++    setState({ kind: "loading" });
++    api
++      .listing(id)
++      .then(({ listing }) => {
++        if (!stale) setState({ kind: "ok", listing });
++      })
++      .catch((err: unknown) => {
++        if (stale) return;
++        if (err instanceof ApiError && err.status === 404) {
++          setState({ kind: "missing" });
++        } else {
++          setState({
++            kind: "error",
++            message: err instanceof ApiError ? err.message : "Something went wrong.",
++          });
++        }
++      });
++    return () => {
++      stale = true;
++    };
++  }, [id, attempt]);
++
++  const loaded = state.kind === "ok" ? state.listing : null;
++
++  // Start keyboard and screen-reader users at the top of the new screen,
++  // rather than leaving focus on a card that is no longer on the page.
++  useEffect(() => {
++    if (loaded) heading.current?.focus();
++  }, [loaded]);
++
++  useEffect(() => {
++    if (!loaded) return;
++    const previous = document.title;
++    document.title = `${loaded.title} – SubletU`;
++    return () => {
++      document.title = previous;
++    };
++  }, [loaded]);
++
++  function goBack() {
++    // "default" is the first entry in this tab, e.g. a shared link opened
++    // directly: going back would leave the app, so go to the home screen.
++    if (location.key === "default") navigate(HOME_PATH, { replace: true });
++    else navigate(-1);
++  }
++
++  if (!loaded) {
++    return (
++      <div className="app">
++        <header className="header">
++          <button type="button" className="icon-btn" onClick={goBack} aria-label="Back">
++            <IconArrowLeft size={19} />
++          </button>
++          <span className="header-title">Listing</span>
++          <span className="header-spacer" />
++        </header>
++        <main className="app-main">
++          {state.kind === "loading" && (
++            <div className="center-state" role="status">
++              <div className="spinner" />
++              <span className="sr-only">Loading listing…</span>
++            </div>
++          )}
++          {state.kind === "missing" && (
++            <div className="center-state">
++              <h3>This listing isn't available</h3>
++              <p>The host may have removed it.</p>
++              <button type="button" className="btn btn-primary" onClick={goBack}>
++                Back to listings
++              </button>
++            </div>
++          )}
++          {state.kind === "error" && (
++            <div className="center-state" role="alert">
++              <h3>Couldn't load this listing</h3>
++              <p>{state.message}</p>
++              <button
++                type="button"
++                className="btn btn-primary"
++                onClick={() => setAttempt((n) => n + 1)}
++              >
++                Try again
++              </button>
++            </div>
++          )}
++        </main>
++      </div>
++    );
++  }
++
++  const { pricing, roomDetails: rooms, owner } = loaded;
++  const distance = distanceLabel(loaded.distanceMiles, user?.university ?? "campus");
++
++  return (
++    <div className="app">
++      <main className="app-main">
++        <div className="detail-top">
++          <button type="button" className="detail-back" onClick={goBack} aria-label="Back">
++            <IconArrowLeft size={19} />
++          </button>
++          <PhotoGallery photos={loaded.photos} title={loaded.title} />
++        </div>
++
++        <div className="section">
++          <h1 ref={heading} tabIndex={-1} className="detail-title">
++            {loaded.title}
++          </h1>
++          <p className="detail-address">
++            <IconPin size={15} />
++            {loaded.address}, {loaded.city}, {loaded.state} {loaded.zip}
++          </p>
++          {distance && <p className="detail-distance">{distance}</p>}
++        </div>
++
++        <section className="section detail-section" aria-labelledby="detail-price">
++          <h2 id="detail-price" className="section-title">
++            Price and dates
++          </h2>
++          {pricing ? (
++            <>
++              <div className="fact-grid">
++                <div className="fact">
++                  <b>{money(pricing.monthlyRent)}</b>
++                  <span>per month</span>
++                </div>
++                <div className="fact">
++                  <b>{pricing.deposit > 0 ? money(pricing.deposit) : "None"}</b>
++                  <span>deposit</span>
++                </div>
++                <div className="fact">
++                  <b>{pricing.utilitiesIncluded ? "Included" : "Extra"}</b>
++                  <span>utilities</span>
++                </div>
++              </div>
++              <p className="detail-dates">
++                Available <time dateTime={pricing.availableFrom}>{formatDay(pricing.availableFrom)}</time>{" "}
++                to <time dateTime={pricing.availableTo}>{formatDay(pricing.availableTo)}</time>
++              </p>
++            </>
++          ) : (
++            <p className="muted">The host hasn't added a price or dates yet.</p>
++          )}
++        </section>
++
++        <section className="section detail-section" aria-labelledby="detail-rooms">
++          <h2 id="detail-rooms" className="section-title">
++            Room details
++          </h2>
++          {rooms ? (
++            <ul className="detail-features">
++              <li>
++                <IconBed size={17} />
++                {bedroomsLabel(rooms.bedrooms)}
++              </li>
++              <li>
++                <IconBath size={17} />
++                {bathroomsLabel(rooms.bathrooms)}
++              </li>
++              <li>
++                <IconUser size={17} />
++                {rooms.maxRoommates === 0
++                  ? "No roommates"
++                  : `Up to ${rooms.maxRoommates} ${rooms.maxRoommates === 1 ? "roommate" : "roommates"}`}
++              </li>
++              <Feature on={rooms.furnished} yes="Furnished" no="Unfurnished" />
++              <Feature on={rooms.petsAllowed} yes="Pets allowed" no="No pets" />
++              <Feature on={rooms.privateBath} yes="Private bathroom" no="Shared bathroom" />
++            </ul>
++          ) : (
++            <p className="muted">The host hasn't added room details yet.</p>
++          )}
++          {loaded.amenities.length > 0 && (
++            <ul className="chip-grid detail-amenities" aria-label="Amenities">
++              {loaded.amenities.map((amenity) => (
++                <li key={amenity} className="chip">
++                  {amenity}
++                </li>
++              ))}
++            </ul>
++          )}
++        </section>
++
++        {loaded.description && (
++          <section className="section detail-section" aria-labelledby="detail-about">
++            <h2 id="detail-about" className="section-title">
++              About this place
++            </h2>
++            <p className="detail-description">{loaded.description}</p>
++          </section>
++        )}
++
++        <section className="section detail-section" aria-labelledby="detail-host">
++          <h2 id="detail-host" className="section-title">
++            Host
++          </h2>
++          {owner ? (
++            <div className="detail-host">
++              <span className="avatar lg" aria-hidden="true">
++                {owner.initials}
++              </span>
++              <div>
++                <p className="detail-host-name">
++                  {owner.name}
++                  {owner.verified && (
++                    <span className="chip good">
++                      <IconShield size={13} />
++                      Verified student
++                    </span>
++                  )}
++                </p>
++                <p className="detail-host-line">
++                  <IconStar size={13} />
++                  {hostRatingLabel(owner.rating, owner.reviewCount)}
++                </p>
++                {owner.university && <p className="detail-host-line">{owner.university}</p>}
++                {owner.bio && <p className="detail-host-bio">{owner.bio}</p>}
++              </div>
++            </div>
++          ) : (
++            <p className="muted">Host details aren't available.</p>
++          )}
++        </section>
++      </main>
++    </div>
++  );
++}
++
++function Feature({ on, yes, no }: { on: boolean; yes: string; no: string }) {
++  return (
++    <li className={on ? undefined : "off"}>
++      {on ? <IconCheck size={17} /> : <IconX size={17} />}
++      {on ? yes : no}
++    </li>
++  );
++}
++
++/**
++ * The photos, one at a time. Previous and Next wrap around, the thumbnails
++ * jump straight to a photo, and Left/Right arrows work while focus is on any
++ * of these controls. The position is announced politely as it changes.
++ */
++function PhotoGallery({ photos, title }: { photos: Photo[]; title: string }) {
++  const [index, setIndex] = useState(0);
++  const ordered = sortedPhotos(photos);
++  const count = ordered.length;
++
++  if (count === 0) {
++    return (
++      <div className="detail-hero detail-hero-empty">
++        <span>No photos yet</span>
++      </div>
++    );
++  }
++
++  const current = ordered[Math.min(index, count - 1)];
++  const go = (delta: number) => setIndex((i) => stepPhoto(i, delta, count));
++
++  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
++    if (count < 2) return;
++    if (event.key === "ArrowRight") {
++      event.preventDefault();
++      go(1);
++    } else if (event.key === "ArrowLeft") {
++      event.preventDefault();
++      go(-1);
++    }
++  }
++
++  return (
++    <div
++      className="detail-gallery"
++      role="group"
++      aria-roledescription="carousel"
++      aria-label={`Photos of ${title}`}
++      onKeyDown={onKeyDown}
++    >
++      <div className="detail-hero">
++        <img src={current.fileUrl} alt={`Photo ${index + 1} of ${count}, ${title}`} />
++        {count > 1 && (
++          <>
++            <button
++              type="button"
++              className="gallery-btn prev"
++              onClick={() => go(-1)}
++              aria-label="Previous photo"
++            >
++              <IconArrowLeft size={18} />
++            </button>
++            <button
++              type="button"
++              className="gallery-btn next"
++              onClick={() => go(1)}
++              aria-label="Next photo"
++            >
++              <IconArrowLeft size={18} className="flip" />
++            </button>
++            <span className="gallery-count" aria-live="polite">
++              <span aria-hidden="true">
++                {index + 1} / {count}
++              </span>
++              <span className="sr-only">
++                Photo {index + 1} of {count}
++              </span>
++            </span>
++          </>
++        )}
++      </div>
++      {count > 1 && (
++        <div className="gallery-thumbs">
++          {ordered.map((photo, i) => (
++            <button
++              key={photo.photoId}
++              type="button"
++              className={`gallery-thumb${i === index ? " on" : ""}`}
++              style={{ backgroundImage: `url(${photo.fileUrl})` }}
++              onClick={() => setIndex(i)}
++              aria-label={`Show photo ${i + 1} of ${count}`}
++              aria-current={i === index ? "true" : undefined}
++            />
++          ))}
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/web/src/styles/theme.css b/web/src/styles/theme.css
+index ac8bcc3..2ff8535 100644
+--- a/web/src/styles/theme.css
++++ b/web/src/styles/theme.css
+@@ -1873,3 +1873,246 @@ input[type="range"]::-webkit-slider-thumb {
+   outline: 2px solid var(--terracotta);
+   outline-offset: 2px;
+ }
++
++/* ------------------------------------------------- listing detail view */
++
++/* Visible focus everywhere in the app, not only on the auth screens: the
++   browser default disappears against the cream background (NFR-5.2). */
++.app a:focus-visible,
++.app button:focus-visible {
++  outline: 2px solid var(--terracotta);
++  outline-offset: 2px;
++}
++
++.header-spacer {
++  width: 38px;
++}
++
++/* minmax(0, 1fr), not the default auto column: a long title would otherwise
++   widen the column to fit it and push the cards off a 375 px screen. */
++.listing-list {
++  display: grid;
++  grid-template-columns: minmax(0, 1fr);
++  gap: 10px;
++  width: 100%;
++  margin: 0;
++  padding: 0;
++  list-style: none;
++  text-align: left;
++}
++
++.listing-card {
++  display: flex;
++  align-items: center;
++  gap: 12px;
++  padding: 10px;
++  border: 1px solid var(--line);
++  border-radius: var(--radius);
++  background: #fff;
++  color: inherit;
++  text-decoration: none;
++}
++
++.listing-card:hover {
++  border-color: var(--line-strong);
++}
++
++.listing-card-photo {
++  flex: 0 0 64px;
++  height: 64px;
++  border-radius: 12px;
++  background: linear-gradient(135deg, var(--terracotta), var(--blush));
++  background-size: cover;
++  background-position: center;
++}
++
++.listing-card-text {
++  display: flex;
++  flex-direction: column;
++  min-width: 0;
++}
++
++.listing-card-title {
++  overflow: hidden;
++  font-weight: 600;
++  white-space: nowrap;
++  text-overflow: ellipsis;
++}
++
++.listing-card-meta {
++  color: var(--slate);
++  font-size: 13px;
++}
++
++.detail-top {
++  position: relative;
++}
++
++.detail-hero img {
++  display: block;
++  width: 100%;
++  height: 100%;
++  object-fit: cover;
++}
++
++.detail-hero-empty {
++  display: grid;
++  place-items: center;
++  color: #fff;
++  font-weight: 600;
++}
++
++.gallery-btn {
++  position: absolute;
++  top: 50%;
++  z-index: 4;
++  display: grid;
++  place-items: center;
++  width: 36px;
++  height: 36px;
++  border-radius: 50%;
++  background: rgba(255, 255, 255, 0.94);
++  color: var(--ink);
++  box-shadow: var(--shadow);
++  transform: translateY(-50%);
++}
++
++.gallery-btn.prev {
++  left: 12px;
++}
++
++.gallery-btn.next {
++  right: 12px;
++}
++
++.gallery-btn .flip {
++  transform: scaleX(-1);
++}
++
++.gallery-count {
++  position: absolute;
++  right: 12px;
++  bottom: 12px;
++  z-index: 4;
++  padding: 3px 10px;
++  border-radius: 999px;
++  background: rgba(45, 52, 54, 0.72);
++  color: #fff;
++  font-size: 12px;
++  font-weight: 600;
++}
++
++.gallery-thumbs {
++  display: flex;
++  gap: 6px;
++  padding: 10px 18px 2px;
++  overflow-x: auto;
++  scrollbar-width: none;
++}
++
++.gallery-thumb {
++  flex: 0 0 auto;
++  width: 56px;
++  height: 42px;
++  border: 2px solid transparent;
++  border-radius: 8px;
++  background-color: var(--sand);
++  background-size: cover;
++  background-position: center;
++  opacity: 0.6;
++}
++
++.gallery-thumb.on {
++  border-color: var(--terracotta);
++  opacity: 1;
++}
++
++.detail-title {
++  margin: 0 0 6px;
++  font-family: var(--font-display);
++  font-size: 24px;
++  line-height: 1.2;
++  letter-spacing: -0.01em;
++}
++
++/* Focus lands here on load so the screen starts at the top; it is not a
++   control, so it gets no outline. */
++.detail-title:focus {
++  outline: none;
++}
++
++.detail-address,
++.detail-host-line {
++  display: flex;
++  align-items: center;
++  gap: 6px;
++  margin: 0;
++  color: var(--slate);
++  font-size: 14px;
++}
++
++.detail-distance {
++  margin: 4px 0 0;
++  color: var(--slate);
++  font-size: 13px;
++}
++
++.detail-section {
++  border-top: 1px solid var(--line);
++}
++
++.detail-dates {
++  margin: 12px 0 0;
++  font-size: 14px;
++}
++
++.detail-features {
++  display: grid;
++  grid-template-columns: 1fr 1fr;
++  gap: 10px 14px;
++  margin: 0;
++  padding: 0;
++  list-style: none;
++  font-size: 14px;
++}
++
++.detail-features li {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++}
++
++.detail-features li.off {
++  color: var(--slate);
++}
++
++.detail-amenities {
++  margin: 14px 0 0;
++  padding: 0;
++  list-style: none;
++}
++
++.detail-description {
++  margin: 0;
++  white-space: pre-line;
++}
++
++.detail-host {
++  display: flex;
++  align-items: flex-start;
++  gap: 12px;
++}
++
++.detail-host-name {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  gap: 8px;
++  margin: 0 0 4px;
++  font-weight: 700;
++}
++
++.detail-host-bio {
++  margin: 6px 0 0;
++  font-size: 14px;
++}
+diff --git a/web/test/listing.test.ts b/web/test/listing.test.ts
+new file mode 100644
+index 0000000..f5e5f8f
+--- /dev/null
++++ b/web/test/listing.test.ts
+@@ -0,0 +1,96 @@
++/**
++ * Listing detail view: the formatting behind the price, dates, room details
++ * and host on the detail screen and the listing cards.
++ */
++import assert from "node:assert/strict";
++import { describe, it } from "node:test";
++import {
++  bathroomsLabel,
++  bedroomsLabel,
++  dateRange,
++  distanceLabel,
++  formatDay,
++  hostRatingLabel,
++  listingPath,
++  money,
++  sortedPhotos,
++  stepPhoto,
++} from "../src/lib/listing.ts";
++
++// Syracuse's timezone, where midnight UTC is still the previous evening.
++process.env.TZ = "America/New_York";
++
++describe("availability dates", () => {
++  it("shows the day the host entered, not the day before", () => {
++    assert.equal(formatDay("2026-05-15"), "May 15, 2026");
++    assert.equal(formatDay("2026-01-01"), "Jan 1, 2026");
++  });
++
++  it("writes the year once when both dates share it", () => {
++    assert.equal(dateRange("2026-05-15", "2026-08-15"), "May 15 – Aug 15, 2026");
++  });
++
++  it("writes both years across a year boundary", () => {
++    assert.equal(dateRange("2026-12-20", "2027-01-10"), "Dec 20, 2026 – Jan 10, 2027");
++  });
++
++  it("passes through a value that is not YYYY-MM-DD rather than inventing a date", () => {
++    assert.equal(formatDay("summer"), "summer");
++  });
++});
++
++describe("price and room details", () => {
++  it("formats rent in whole dollars", () => {
++    assert.equal(money(495), "$495");
++    assert.equal(money(1240), "$1,240");
++  });
++
++  it("calls zero bedrooms a studio and pluralises the rest", () => {
++    assert.equal(bedroomsLabel(0), "Studio");
++    assert.equal(bedroomsLabel(1), "1 bedroom");
++    assert.equal(bedroomsLabel(5), "5 bedrooms");
++  });
++
++  it("keeps half bathrooms", () => {
++    assert.equal(bathroomsLabel(1), "1 bath");
++    assert.equal(bathroomsLabel(1.5), "1.5 baths");
++  });
++
++  it("shows no distance for a listing that has not been geocoded", () => {
++    assert.equal(distanceLabel(null, "Syracuse University"), null);
++    assert.equal(distanceLabel(0.62, "Syracuse University"), "0.6 mi from Syracuse University");
++  });
++});
++
++describe("host", () => {
++  it("does not show a rating for a host with no reviews", () => {
++    assert.equal(hostRatingLabel(0, 0), "No reviews yet");
++    assert.equal(hostRatingLabel(4.9, 1), "4.9 from 1 review");
++    assert.equal(hostRatingLabel(4.86, 12), "4.9 from 12 reviews");
++  });
++});
++
++describe("photo gallery", () => {
++  it("wraps from the last photo to the first and back", () => {
++    assert.equal(stepPhoto(2, 1, 3), 0);
++    assert.equal(stepPhoto(0, -1, 3), 2);
++    assert.equal(stepPhoto(1, 1, 3), 2);
++  });
++
++  it("puts the host's first photo first, whatever order the array arrives in", () => {
++    const photos = [{ sortOrder: 2, id: "c" }, { sortOrder: 0, id: "a" }, { sortOrder: 1, id: "b" }];
++    assert.deepEqual(sortedPhotos(photos).map((p) => p.id), ["a", "b", "c"]);
++    assert.equal(photos[0].id, "c", "the original array is left alone");
++  });
++
++  it("stays at 0 when there are no photos", () => {
++    assert.equal(stepPhoto(0, 1, 0), 0);
++  });
++});
++
++describe("listingPath", () => {
++  it("escapes the id so it cannot change the route", () => {
++    assert.equal(listingPath("lst_abc"), "/listings/lst_abc");
++    assert.equal(listingPath("a/b?c"), "/listings/a%2Fb%3Fc");
++  });
++});
+-- 
+2.43.0
+
