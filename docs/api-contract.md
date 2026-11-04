@@ -336,15 +336,18 @@ Re-swiping the same listing updates the existing verdict rather than duplicating
 
 ### `POST /swipes/undo` · auth required
 
-Reverses the most recent swipe, and unsaves it if it was a right swipe (FR-2.5).
+Reverses the most recent swipe, and unsaves it if it was a right swipe (FR-2.5). Undoing a
+pass never touches the Saved tab. Swipes on listings that are no longer active are
+skipped, since they could not go back into the deck.
 
 **`200`** → `{ "ok": true, "listing": Listing }` — the restored card, so the UI can put it
 back — or `{ "ok": false, "message": "Nothing to undo" }` when there is nothing to undo.
 
 ### `DELETE /swipes` · auth required
 
-Resets browsing history so the whole deck returns (FR-2.6). Optional query
-`?keepSaved=true` clears the pass history but leaves saved listings alone.
+Resets browsing history so the whole deck returns (FR-2.6). With no query this is a full
+reset: every swipe and every save is cleared. Optional query `?keepSaved=true` clears only
+the passes (left swipes); saved listings keep their right swipe and stay out of the deck.
 
 **`200`** → `{ "ok": true, "keptSaved": true }`
 
@@ -366,7 +369,9 @@ Resets browsing history so the whole deck returns (FR-2.6). Optional query
 { "listingId": "lst_…" }
 ```
 
-Idempotent — saving twice does not duplicate (FR-6.3).
+Idempotent — saving twice does not duplicate (FR-6.3). A listing saved here leaves the
+deck just as a right swipe would, and any earlier pass on it is cleared: the deck excludes
+everything the renter has swiped **or** saved.
 
 **`201`** → `{ "ok": true, "saved": true }`
 

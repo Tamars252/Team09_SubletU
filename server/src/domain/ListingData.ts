@@ -42,9 +42,26 @@ export type ListingFilter = {
   radiusMiles?: number;
   bbox?: { minLat: number; minLng: number; maxLat: number; maxLng: number };
   ownerId?: string;
+  /**
+   * Narrow to this renter's deck. Despite the name it also drops listings they
+   * have saved or own; see DECK_EXCLUSIONS_SQL.
+   */
   excludeSwipedBy?: string;
   status?: string;
 };
+
+/**
+ * What keeps a listing out of a renter's deck: they own it, they have swiped
+ * on it, or they have saved it (from the deck or anywhere else). This is the
+ * one definition, shared by the deck query and by every count of what is left
+ * in the deck, so the deck and the Saved tab cannot disagree (FR-6.4).
+ *
+ * Expects `listings` aliased as `l`. Bind the renter's id three times.
+ */
+export const DECK_EXCLUSIONS_SQL = `
+  l.owner_id <> ?
+  AND l.id NOT IN (SELECT listing_id FROM swipes WHERE user_id = ?)
+  AND l.id NOT IN (SELECT listing_id FROM saved_listings WHERE user_id = ?)`;
 
 export type ListingSort = "newest" | "price_asc" | "price_desc" | "distance" | "available_soonest";
 
@@ -367,11 +384,8 @@ export class ListingData extends Data {
       params.push(filter.bbox.minLat, filter.bbox.maxLat, filter.bbox.minLng, filter.bbox.maxLng);
     }
     if (filter.excludeSwipedBy) {
-      where.push("l.id NOT IN (SELECT listing_id FROM swipes WHERE user_id = ?)");
-      params.push(filter.excludeSwipedBy);
-      // Never show a user their own listing in the deck.
-      where.push("l.owner_id <> ?");
-      params.push(filter.excludeSwipedBy);
+      where.push(DECK_EXCLUSIONS_SQL);
+      params.push(filter.excludeSwipedBy, filter.excludeSwipedBy, filter.excludeSwipedBy);
     }
 
     const sql = `
