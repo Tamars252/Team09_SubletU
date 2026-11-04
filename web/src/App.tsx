@@ -10,6 +10,9 @@ import type { Filters, Listing, Reference } from "./api/types.ts";
 import { EMPTY_FILTERS, activeFilterCount } from "./api/types.ts";
 import { FilterSheet } from "./components/FilterSheet.tsx";
 import { IconSliders } from "./components/Icons.tsx";
+import { ListingCard } from "./components/ListingCard.tsx";
+import { LISTING_PATH } from "./lib/listing.ts";
+import { ListingDetail } from "./screens/ListingDetail.tsx";
 
 type Results =
   | { kind: "loading" }
@@ -22,7 +25,8 @@ type Results =
  *
  * The filter state lives here so every screen that lists listings (the deck,
  * the map) reads the same filters. Until the deck lands, the main area shows
- * how many listings match and the first few titles.
+ * how many listings match and the first few as cards that open the detail
+ * view.
  */
 function AppShell() {
   const { user, logout } = useAuth();
@@ -92,9 +96,11 @@ function AppShell() {
                 {filterCount === 0 ? " near campus" : results.total === 1 ? " matches your filters" : " match your filters"}
               </h3>
               {results.listings.length > 0 && (
-                <ul className="muted" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                <ul className="listing-list">
                   {results.listings.map((l) => (
-                    <li key={l.id}>{l.title}</li>
+                    <li key={l.id}>
+                      <ListingCard listing={l} />
+                    </li>
                   ))}
                 </ul>
               )}
@@ -146,6 +152,7 @@ export function App() {
       <Route path={REGISTER_PATH} element={<Register />} />
       <Route element={<ProtectedRoute />}>
         <Route path={HOME_PATH} element={<AppShell />} />
+        <Route path={LISTING_PATH} element={<ListingDetail />} />
       </Route>
       {/* Unknown URLs go through the guard rather than 404-ing, so a stale
           deep link still ends at sign-in when there is no session. */}

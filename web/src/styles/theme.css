@@ -1873,3 +1873,246 @@ input[type="range"]::-webkit-slider-thumb {
   outline: 2px solid var(--terracotta);
   outline-offset: 2px;
 }
+
+/* ------------------------------------------------- listing detail view */
+
+/* Visible focus everywhere in the app, not only on the auth screens: the
+   browser default disappears against the cream background (NFR-5.2). */
+.app a:focus-visible,
+.app button:focus-visible {
+  outline: 2px solid var(--terracotta);
+  outline-offset: 2px;
+}
+
+.header-spacer {
+  width: 38px;
+}
+
+/* minmax(0, 1fr), not the default auto column: a long title would otherwise
+   widen the column to fit it and push the cards off a 375 px screen. */
+.listing-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.listing-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: inherit;
+  text-decoration: none;
+}
+
+.listing-card:hover {
+  border-color: var(--line-strong);
+}
+
+.listing-card-photo {
+  flex: 0 0 64px;
+  height: 64px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--terracotta), var(--blush));
+  background-size: cover;
+  background-position: center;
+}
+
+.listing-card-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.listing-card-title {
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.listing-card-meta {
+  color: var(--slate);
+  font-size: 13px;
+}
+
+.detail-top {
+  position: relative;
+}
+
+.detail-hero img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.detail-hero-empty {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 600;
+}
+
+.gallery-btn {
+  position: absolute;
+  top: 50%;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  transform: translateY(-50%);
+}
+
+.gallery-btn.prev {
+  left: 12px;
+}
+
+.gallery-btn.next {
+  right: 12px;
+}
+
+.gallery-btn .flip {
+  transform: scaleX(-1);
+}
+
+.gallery-count {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 4;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(45, 52, 54, 0.72);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.gallery-thumbs {
+  display: flex;
+  gap: 6px;
+  padding: 10px 18px 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.gallery-thumb {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 42px;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background-color: var(--sand);
+  background-size: cover;
+  background-position: center;
+  opacity: 0.6;
+}
+
+.gallery-thumb.on {
+  border-color: var(--terracotta);
+  opacity: 1;
+}
+
+.detail-title {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+/* Focus lands here on load so the screen starts at the top; it is not a
+   control, so it gets no outline. */
+.detail-title:focus {
+  outline: none;
+}
+
+.detail-address,
+.detail-host-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--slate);
+  font-size: 14px;
+}
+
+.detail-distance {
+  margin: 4px 0 0;
+  color: var(--slate);
+  font-size: 13px;
+}
+
+.detail-section {
+  border-top: 1px solid var(--line);
+}
+
+.detail-dates {
+  margin: 12px 0 0;
+  font-size: 14px;
+}
+
+.detail-features {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+
+.detail-features li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detail-features li.off {
+  color: var(--slate);
+}
+
+.detail-amenities {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.detail-description {
+  margin: 0;
+  white-space: pre-line;
+}
+
+.detail-host {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.detail-host-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-weight: 700;
+}
+
+.detail-host-bio {
+  margin: 6px 0 0;
+  font-size: 14px;
+}
