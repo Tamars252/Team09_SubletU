@@ -207,11 +207,14 @@ export const api = {
   },
 
   save(listingId: string) {
-    return request<{ ok: boolean }>("/saved", { method: "POST", body: { listingId } });
+    return request<{ ok: boolean; saved: boolean }>("/saved", {
+      method: "POST",
+      body: { listingId },
+    });
   },
 
   unsave(listingId: string) {
-    return request<{ ok: boolean }>(`/saved/${listingId}`, { method: "DELETE" });
+    return request<{ ok: boolean; saved: boolean }>(`/saved/${listingId}`, { method: "DELETE" });
   },
 
   /* --------------------------------------------------------------- messages */
