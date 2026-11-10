@@ -93,6 +93,14 @@ function retrieveAmenitiesFor(listingIds: string[]): Map<string, string[]> {
   return grouped;
 }
 
+/** Compares two sort keys, putting a missing key after any present one. */
+function missingLast<T>(a: T | null, b: T | null, compare: (x: T, y: T) => number): number {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return compare(a, b);
+}
+
 const SELECT_BASE = `
   SELECT l.id, l.owner_id, l.title, l.address, l.city, l.state, l.zip, l.description,
          l.lat, l.lng, l.geocode_source, l.status, l.created_at, l.updated_at,
@@ -410,29 +418,32 @@ export class ListingData extends Data {
     return listings;
   }
 
-  /** SortData() from the diagram. */
+  /**
+   * SortData() from the diagram. Returns a new array; the input is left alone.
+   *
+   * A listing missing the value being sorted on (no pricing, no coordinates)
+   * always goes last, whichever direction is asked for. Treating a missing
+   * rent as $0 would put an unpriced listing at the top of "cheapest first".
+   */
   static sortData(listings: ListingData[], sort: ListingSort): ListingData[] {
+    const rent = (l: ListingData) => l.pricingData?.monthlyRent ?? null;
     const sorted = [...listings];
     switch (sort) {
       case "price_asc":
-        sorted.sort(
-          (a, b) => (a.pricingData?.monthlyRent ?? 0) - (b.pricingData?.monthlyRent ?? 0),
-        );
+        sorted.sort((a, b) => missingLast(rent(a), rent(b), (x, y) => x - y));
         break;
       case "price_desc":
-        sorted.sort(
-          (a, b) => (b.pricingData?.monthlyRent ?? 0) - (a.pricingData?.monthlyRent ?? 0),
-        );
+        sorted.sort((a, b) => missingLast(rent(a), rent(b), (x, y) => y - x));
         break;
       case "distance":
-        sorted.sort(
-          (a, b) => (a.distanceMiles ?? Number.MAX_VALUE) - (b.distanceMiles ?? Number.MAX_VALUE),
-        );
+        sorted.sort((a, b) => missingLast(a.distanceMiles, b.distanceMiles, (x, y) => x - y));
         break;
       case "available_soonest":
         sorted.sort((a, b) =>
-          (a.pricingData?.availableFrom ?? "9999").localeCompare(
-            b.pricingData?.availableFrom ?? "9999",
+          missingLast(
+            a.pricingData?.availableFrom ?? null,
+            b.pricingData?.availableFrom ?? null,
+            (x, y) => x.localeCompare(y),
           ),
         );
         break;
