@@ -6,6 +6,7 @@
 export const SIGN_IN_PATH = "/signin";
 export const REGISTER_PATH = "/register";
 export const HOME_PATH = "/";
+export const SAVED_PATH = "/saved";
 
 export type GuardState = {
   /** The session is still being restored from a stored token. */
