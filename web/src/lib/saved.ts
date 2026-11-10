@@ -127,15 +127,21 @@ export function primaryPhotoUrl(listing: Listing): string | null {
   return best?.url ?? null;
 }
 
+/** Whether the listing has a usable monthly rent, so the card can decide
+ * whether a "/mo" suffix would make sense. */
+export function hasRent(listing: Listing): boolean {
+  const rent = listing.pricing?.monthlyRent;
+  return typeof rent === "number" && Number.isFinite(rent);
+}
+
 /**
  * Monthly rent as it appears on the card. `pricing` is null on a listing whose
  * composed records are missing (docs/api-contract.md), so this must not assume
  * a number is there.
  */
 export function formatRent(listing: Listing): string {
-  const rent = listing.pricing?.monthlyRent;
-  if (typeof rent !== "number" || !Number.isFinite(rent)) return "Rent not listed";
-  return `$${Math.round(rent).toLocaleString("en-US")}`;
+  if (!hasRent(listing)) return "Rent not listed";
+  return `$${Math.round(listing.pricing!.monthlyRent).toLocaleString("en-US")}`;
 }
 
 /** The city/address line, skipping whichever half the listing is missing. */

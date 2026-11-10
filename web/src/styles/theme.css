@@ -1100,6 +1100,35 @@ textarea.input {
   overflow: hidden;
 }
 
+/* ------------------------------------------------------------------ saved */
+
+.saved-list {
+  padding: 18px;
+}
+
+.saved-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* The card is a link, so the unsave control sits on top of it rather than
+   inside — a button nested in an anchor is not valid HTML. */
+.saved-card {
+  position: relative;
+}
+
+.saved-unsave {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+/* A chip in the card body is a label, not a row, so it should not stretch. */
+.saved-card .chip {
+  align-self: flex-start;
+}
+
 /* ---------------------------------------------------------------- filters */
 
 .sheet-backdrop {

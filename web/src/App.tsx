@@ -1,9 +1,10 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/AppShell.tsx";
 import { ProtectedRoute } from "./components/ProtectedRoute.tsx";
-import { HOME_PATH, REGISTER_PATH, SIGN_IN_PATH } from "./auth/guard.ts";
+import { HOME_PATH, REGISTER_PATH, SAVED_PATH, SIGN_IN_PATH } from "./auth/guard.ts";
 import { Browse } from "./screens/Browse.tsx";
 import { Register } from "./screens/Register.tsx";
+import { Saved } from "./screens/Saved.tsx";
 import { SignIn } from "./screens/SignIn.tsx";
 
 /**
@@ -20,6 +21,7 @@ export function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
           <Route path={HOME_PATH} element={<Browse />} />
+          <Route path={SAVED_PATH} element={<Saved />} />
         </Route>
       </Route>
       {/* Unknown URLs go through the guard rather than 404-ing, so a stale

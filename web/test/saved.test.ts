@@ -16,6 +16,7 @@ import {
   formatDay,
   formatLocation,
   formatRent,
+  hasRent,
   isUnavailable,
   listingDetailPath,
   primaryPhotoUrl,
@@ -226,6 +227,11 @@ describe("card fields", () => {
   it("formats rent, and says so when pricing is missing", () => {
     assert.equal(formatRent(listing({ id: "a" })), "$795");
     assert.equal(formatRent(listing({ id: "a", pricing: null })), "Rent not listed");
+  });
+
+  it("knows whether a /mo suffix would make sense", () => {
+    assert.equal(hasRent(listing({ id: "a" })), true);
+    assert.equal(hasRent(listing({ id: "a", pricing: null })), false);
   });
 
   it("groups the thousands in a high rent", () => {
