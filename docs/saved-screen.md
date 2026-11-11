@@ -141,20 +141,13 @@ The story lists ten criteria. (There is no AC11 — the documentation task's
 
 | AC | What it says | Proven by |
 | --- | --- | --- |
-| 1 | "Saved" in the bottom nav, signed-in only, routes to `/saved` inside `ProtectedRoute` | `web/src/components/BottomNav.tsx` (`NAV_ITEMS`); `web/src/App.tsx:21-26` (nested inside `ProtectedRoute` → `AppShell`); screenshot `01-populated.png` |
-| 2 | Loads `GET /api/saved`; photo or placeholder, title, rent, city/address, dates, newest saved first | `web/src/screens/Saved.tsx` (`load`, `SavedCard`); `lib/saved.ts` (`sortBySavedAt`, `primaryPhotoUrl`, `formatRent`, `formatLocation`, `formatAvailability`); tests `sortBySavedAt: newest save first` + `card fields`; screenshot `01-populated.png` |
-| 3 | Unsave per card; optimistic removal with rollback and a visible error on failure | `web/src/screens/Saved.tsx` (`unsave`); `lib/saved.ts` (`beginRemove`, `rollbackRemove`); tests `beginRemove / rollbackRemove: optimistic unsave`; screenshots `03-after-unsave.png`, `04-unsave-error.png` |
+| 1 | "Saved" in the bottom nav, signed-in only, routes to `/saved` inside `ProtectedRoute` | `web/src/components/BottomNav.tsx` (`NAV_ITEMS`); `web/src/App.tsx:21-26` (nested inside `ProtectedRoute` → `AppShell`) |
+| 2 | Loads `GET /api/saved`; photo or placeholder, title, rent, city/address, dates, newest saved first | `web/src/screens/Saved.tsx` (`load`, `SavedCard`); `lib/saved.ts` (`sortBySavedAt`, `primaryPhotoUrl`, `formatRent`, `formatLocation`, `formatAvailability`); tests `sortBySavedAt: newest save first` + `card fields` |
+| 3 | Unsave per card; optimistic removal with rollback and a visible error on failure | `web/src/screens/Saved.tsx` (`unsave`); `lib/saved.ts` (`beginRemove`, `rollbackRemove`); tests `beginRemove / rollbackRemove: optimistic unsave` |
 | 4 | Reusable `SaveButton`, exported, not required to be wired into cards that don't exist | `web/src/components/SaveButton.tsx`; see "Why SaveButton is not the unsave control" above |
 | 5 | Persists across refresh and sign out/in; users can't see each other's saves | No client-side cache — `Saved.tsx` re-reads on every mount; server-side proven by `server/test/routes/savedListings.test.ts:186` (isolation), `:162` (restart). **No new server test**, per the no-duplication rule |
-| 6 | Empty state with a message and a button to `/` | `web/src/screens/Saved.tsx` (`state.listings.length === 0` branch); screenshot `02-empty.png` |
-| 7 | Loading and error states with Retry | `web/src/screens/Saved.tsx` (`loading` and `error` branches; `load` is the Retry handler); screenshots `05-loading.png`, `06-retry.png`, `04-unsave-error.png` |
+| 6 | Empty state with a message and a button to `/` | `web/src/screens/Saved.tsx` (`state.listings.length === 0` branch) |
+| 7 | Loading and error states with Retry | `web/src/screens/Saved.tsx` (`loading` and `error` branches; `load` is the Retry handler) |
 | 8 | Unavailable listings omitted or marked, without crashing | Server drops `removed` (`server/src/routes/saved.ts:21`); `pending` / `inactive` get a chip via `unavailableLabel`; tests `availability`. `pricing`/`photos`/`savedAt` all have fallbacks, so a partial listing renders rather than throwing |
 | 9 | Card navigates to the detail route if one exists, else the contract's route pattern, with the dependency noted | `lib/saved.ts` (`listingDetailPath`); test `listingDetailPath`; "Known dependency" section above |
 | 10 | `node:test` tests for the pure logic; no DOM library; `npm test` and `npm run typecheck` pass | `web/test/saved.test.ts` — 25 cases over `lib/saved.ts`; see "How to run the tests" |
-
----
-
-## Screenshots
-
-Captured by hand into `artifacts/saved/` — see `artifacts/saved/README.md` for
-the list and how to produce each one. They are **not** committed yet.
