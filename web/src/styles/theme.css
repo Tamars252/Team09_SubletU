@@ -1902,3 +1902,52 @@ input[type="range"]::-webkit-slider-thumb {
   outline: 2px solid var(--terracotta);
   outline-offset: 2px;
 }
+
+/* ---------------------------------------------------- deck host (TM09-158) */
+
+/* The deck sizes itself to whatever height is left between the header and
+   the tab bar, so the card never makes the page scroll — on a 375px-wide
+   phone or anything else. */
+.app-main.deck-host {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.deck .banner {
+  margin-bottom: 10px;
+}
+
+/* Keep the card's photo from collapsing to nothing on short phones (an
+   iPhone SE is 375 x 667, minus browser chrome). */
+@media (max-height: 620px) {
+  .deck-controls {
+    padding: 10px 0 12px;
+  }
+  .deck-btn {
+    width: 48px;
+    height: 48px;
+  }
+  .deck-btn.like {
+    width: 56px;
+    height: 56px;
+  }
+}
+
+/* Short phones: the photo gives way first, then the host line, so the text
+   block is never cut off at the bottom of the card. */
+@media (max-height: 600px) {
+  .swipe-photo {
+    min-height: 26%;
+  }
+  .swipe-body {
+    padding: 10px 14px;
+    gap: 6px;
+  }
+  .swipe-host {
+    display: none;
+  }
+  .photo-price {
+    font-size: 24px;
+  }
+}
