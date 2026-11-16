@@ -56,6 +56,7 @@ export class RoomDetails extends Data {
 
   validateData(): string[] {
     const problems: string[] = [];
+    if (!this.listingId.trim()) problems.push("Listing id is required");
     if (!Number.isInteger(this.bedrooms) || this.bedrooms < 0 || this.bedrooms > 12) {
       problems.push("Bedrooms must be a whole number between 0 and 12");
     }
@@ -64,6 +65,17 @@ export class RoomDetails extends Data {
     }
     if (!Number.isInteger(this.maxRoommates) || this.maxRoommates < 0 || this.maxRoommates > 20) {
       problems.push("Max roommates must be a whole number between 0 and 20");
+    }
+    // The three flags reach the row as 1/0, so anything that is not a boolean
+    // would be silently coerced on the way in and read back as a lie.
+    if (typeof this.petsAllowed !== "boolean") {
+      problems.push("Pets allowed must be true or false");
+    }
+    if (typeof this.furnished !== "boolean") {
+      problems.push("Furnished must be true or false");
+    }
+    if (typeof this.privateBath !== "boolean") {
+      problems.push("Private bath must be true or false");
     }
     return problems;
   }

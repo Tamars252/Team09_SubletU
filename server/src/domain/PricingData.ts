@@ -52,6 +52,7 @@ export class PricingData extends Data {
 
   validateData(): string[] {
     const problems: string[] = [];
+    if (!this.listingId.trim()) problems.push("Listing id is required");
     if (!Number.isFinite(this.monthlyRent) || this.monthlyRent <= 0) {
       problems.push("Monthly rent must be greater than $0");
     }
@@ -65,7 +66,14 @@ export class PricingData extends Data {
     if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime()) && to <= from) {
       problems.push("Available-to must be after available-from");
     }
-    if (this.deposit < 0) problems.push("Deposit cannot be negative");
+    // Non-finite folds into the lower bound, the same way it does for rent:
+    // a deposit that is not a number is not a deposit of zero or more.
+    if (!Number.isFinite(this.deposit) || this.deposit < 0) {
+      problems.push("Deposit cannot be negative");
+    }
+    if (this.deposit > 20_000) {
+      problems.push("Deposit looks unrealistic (over $20,000)");
+    }
     return problems;
   }
 

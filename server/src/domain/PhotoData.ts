@@ -132,6 +132,7 @@ export class PhotoData extends Data {
 
   validateData(): string[] {
     const problems: string[] = [];
+    if (!this.listingId.trim()) problems.push("Listing id is required");
     if (!this.fileUrl) problems.push("Photo is missing a file URL");
     if (!/^(https?:\/\/|\/uploads\/)/.test(this.fileUrl)) {
       problems.push("Photo URL must be an http(s) URL or an uploaded file path");

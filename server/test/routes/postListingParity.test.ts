@@ -51,6 +51,8 @@ const CASES: Array<[string, Partial<ListingDraft>]> = [
   ["$0 rent", { monthlyRent: "0" }],
   ["rent over $20,000", { monthlyRent: "20001" }],
   ["a negative deposit", { deposit: "-5" }],
+  ["a deposit at the $20,000 ceiling", { deposit: "20000" }],
+  ["a deposit over $20,000", { deposit: "20001" }],
   ["Feb 31", { availableFrom: "2027-02-31" }],
   ["a window that ends before it starts", { availableTo: "2027-05-01" }],
   ["fractional bedrooms", { bedrooms: "1.5" }],
