@@ -368,10 +368,16 @@ export class ListingManager {
     }
 
     transaction(() => {
-      // Soft-delete keeps conversation history intact for both parties — and
-      // keeps the photos, so the owner can set the listing back to active.
-      // A hard delete would cascade to photos through the schema's foreign
-      // keys; destroying them here left a "removed" listing unrecoverable.
+      // Soft-delete, so conversation history and any reports filed against
+      // the listing survive the host deleting it. A hard DELETE would cascade
+      // through the schema's foreign keys and take the moderation evidence
+      // with it, which is exactly what a scammer would want.
+      //
+      // The photos stay for the same reason: they are part of the record a
+      // report is about. They are not kept so the listing can come back —
+      // removed is final. updateListing() treats a removed listing as not
+      // found, and PATCH only ever accepts "active" or "paused", so nothing
+      // can reactivate one. See docs/ERD.md, "Soft-delete decision".
       db.prepare("UPDATE listings SET status = 'removed', updated_at = ? WHERE id = ?").run(
         nowIso(),
         listingId,

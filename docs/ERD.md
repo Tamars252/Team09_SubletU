@@ -202,7 +202,7 @@ found, so `PATCH` returns 404.
 
 | Table                                        | What happens | Why                                                        |
 |----------------------------------------------|--------------|------------------------------------------------------------|
-| `photos`                                     | deleted      | Files take disk space and no one can open the listing.     |
+| `photos`                                     | kept         | Part of the record a report is about, same as the messages. |
 | `saved_listings`                             | deleted      | A renter's saved list should not show a dead listing.      |
 | `conversations`, `messages`                  | kept         | Both parties keep their chat history.                      |
 | `reports`                                    | kept         | Moderation evidence survives the host deleting the listing. |

@@ -128,7 +128,7 @@ describe("ListingManager.updateListing", () => {
 });
 
 describe("ListingManager.deleteListing", () => {
-  it("keeps the photos so a removed listing can be restored", async () => {
+  it("keeps the photos, which stay part of the record a report is about", async () => {
     const input = baseInput();
     input.photoDataUrls = [PNG_1PX];
     const created = await new ListingManager().submitListing(input);
