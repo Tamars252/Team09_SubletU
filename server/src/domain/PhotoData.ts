@@ -148,6 +148,21 @@ export class PhotoData extends Data {
     return problems;
   }
 
+  /**
+   * Insert, or update the row this photo id already has.
+   *
+   * listing_id and upload_timestamp are left out of the DO UPDATE SET on
+   * purpose. Both are facts about where the photo came from, fixed when it
+   * arrived: re-saving a photo re-describes it, it does not re-upload it.
+   *
+   * listing_id especially must not move. The file sits under
+   * UPLOAD_DIR/<listing_id>/ and fileUrl points at that path, so letting an
+   * update rewrite the column would leave the row pointing at one listing and
+   * the bytes at another — and would hand any caller holding a photo id a way
+   * to reattach someone else's photo to their own listing. Moving a photo
+   * between listings is not an operation this class offers; deleting it and
+   * uploading it again is.
+   */
   storeData(): void {
     db.prepare(
       `INSERT INTO photos (id, listing_id, file_url, file_size, sort_order, upload_timestamp)
@@ -268,7 +283,18 @@ export class PhotoData extends Data {
     if (abs.startsWith(config.uploadDir + path.sep) && fs.existsSync(abs)) fs.unlinkSync(abs);
   }
 
-  /** Registers an already-hosted image (used by the seed data). */
+  /**
+   * Registers an already-hosted image (used by the seed data).
+   *
+   * fileSize is 0 because nothing here knows the size and nothing may find
+   * out: the bytes live on someone else's server, and fetching them to
+   * measure would turn seeding into a network operation that fails offline
+   * and in CI. 0 is the honest answer — "not measured" — and it is also the
+   * safe one, because fileSize only ever feeds the upper bound in
+   * validateData(), which a remote photo cannot breach anyway: the size
+   * limit exists to cap what this server stores, and this server stores
+   * nothing for a remote photo.
+   */
   static fromRemoteUrl(listingId: string, url: string, sortOrder: number): PhotoData {
     return new PhotoData({
       photoId: newId("pho"),
