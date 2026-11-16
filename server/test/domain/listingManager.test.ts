@@ -233,4 +233,23 @@ describe("AC3: only the owner can edit or delete a listing", () => {
     assert.equal(m.deleteListing("lst_missing", host).ok, false);
     assert.equal(m.operationStatus, "not_found");
   });
+
+  // TM09-121: the result carries the same OperationState the manager is left
+  // in, so a route can branch on the value it was handed rather than reaching
+  // back into the manager.
+  it("reports the operation state in the result, matching the manager's", async () => {
+    const m = new ListingManager();
+
+    const forbidden = await m.updateListing(L.pricey, other, { title: "Hijacked title" });
+    assert.equal(forbidden.state, "forbidden");
+    assert.equal(forbidden.state, m.operationStatus);
+
+    const missing = m.deleteListing("lst_missing", host);
+    assert.equal(missing.state, "not_found");
+    assert.equal(missing.state, m.operationStatus);
+
+    const updated = await m.updateListing(L.pricey, host, { title: "Luxury two bedroom" });
+    assert.equal(updated.state, "updated");
+    assert.equal(updated.state, m.operationStatus);
+  });
 });

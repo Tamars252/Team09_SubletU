@@ -321,8 +321,10 @@ listingsRouter.patch(
     const status = await manager.updateListing(req.params.id, user.id, patch);
 
     if (!status.ok) {
-      if (manager.operationStatus === "not_found") throw notFound(status.message);
-      if (manager.operationStatus === "forbidden") throw forbidden(status.message);
+      // status.state is an OperationState, so a misspelt case here is a tsc
+      // error rather than a branch that silently never matches.
+      if (status.state === "not_found") throw notFound(status.message);
+      if (status.state === "forbidden") throw forbidden(status.message);
       res.status(422).json({ error: status.message, problems: status.problems });
       return;
     }
@@ -338,7 +340,7 @@ listingsRouter.delete(
     const manager = new ListingManager();
     const status = manager.deleteListing(req.params.id, user.id);
     if (!status.ok) {
-      if (manager.operationStatus === "not_found") throw notFound(status.message);
+      if (status.state === "not_found") throw notFound(status.message);
       throw forbidden(status.message);
     }
     res.json({ message: status.message });
