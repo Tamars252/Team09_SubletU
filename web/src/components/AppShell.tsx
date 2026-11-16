@@ -69,7 +69,7 @@ export function AppShell() {
         </div>
       </header>
 
-      <main className="app-main">
+      <main className={`app-main${filterable ? " deck-host" : ""}`}>
         <Outlet context={{ filters, setFilters, reference } satisfies ShellContext} />
       </main>
 
