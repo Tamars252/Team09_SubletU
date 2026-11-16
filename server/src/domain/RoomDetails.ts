@@ -1,5 +1,6 @@
 import { chunkIds, db, placeholders } from "../db.ts";
 import { Data } from "./Data.ts";
+import { JsonFields } from "./jsonFields.ts";
 
 type RoomDetailsRow = {
   listing_id: string;
@@ -56,6 +57,7 @@ export class RoomDetails extends Data {
 
   validateData(): string[] {
     const problems: string[] = [];
+    if (!this.listingId.trim()) problems.push("Listing id is required");
     if (!Number.isInteger(this.bedrooms) || this.bedrooms < 0 || this.bedrooms > 12) {
       problems.push("Bedrooms must be a whole number between 0 and 12");
     }
@@ -64,6 +66,17 @@ export class RoomDetails extends Data {
     }
     if (!Number.isInteger(this.maxRoommates) || this.maxRoommates < 0 || this.maxRoommates > 20) {
       problems.push("Max roommates must be a whole number between 0 and 20");
+    }
+    // The three flags reach the row as 1/0, so anything that is not a boolean
+    // would be silently coerced on the way in and read back as a lie.
+    if (typeof this.petsAllowed !== "boolean") {
+      problems.push("Pets allowed must be true or false");
+    }
+    if (typeof this.furnished !== "boolean") {
+      problems.push("Furnished must be true or false");
+    }
+    if (typeof this.privateBath !== "boolean") {
+      problems.push("Private bath must be true or false");
     }
     return problems;
   }
@@ -130,6 +143,31 @@ export class RoomDetails extends Data {
       }
     }
     return byListing;
+  }
+
+  /**
+   * The inverse of toJSON(). Like PricingData's, it takes the listing id
+   * separately because toJSON() leaves it out, and it does not call
+   * validateData() — see the note there.
+   */
+  static fromJSON(listingId: string, json: unknown): RoomDetails {
+    const fields = new JsonFields("RoomDetails", json);
+    const bedrooms = fields.number("bedrooms");
+    const bathrooms = fields.number("bathrooms");
+    const maxRoommates = fields.number("maxRoommates");
+    const petsAllowed = fields.boolean("petsAllowed");
+    const furnished = fields.boolean("furnished");
+    const privateBath = fields.boolean("privateBath");
+    fields.done(); // every problem at once, before any value above is trusted
+    return new RoomDetails({
+      listingId,
+      bedrooms,
+      bathrooms,
+      maxRoommates,
+      petsAllowed,
+      furnished,
+      privateBath,
+    });
   }
 
   toJSON() {

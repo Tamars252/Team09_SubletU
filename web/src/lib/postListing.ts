@@ -116,8 +116,8 @@ export function validateDraft(draft: ListingDraft, photoCount = 0): DraftErrors 
   const deposit = num(draft.deposit);
   if (draft.deposit.trim() !== "" && (deposit === null || deposit < 0)) {
     errors.deposit = "Deposit cannot be negative";
-  } else if (deposit !== null && deposit > 50_000) {
-    errors.deposit = "Deposit must be at most $50,000";
+  } else if (deposit !== null && deposit > 20_000) {
+    errors.deposit = "Deposit looks unrealistic (over $20,000)";
   }
 
   const fromOk = isCalendarDate(draft.availableFrom);

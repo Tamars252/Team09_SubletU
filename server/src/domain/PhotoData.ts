@@ -4,6 +4,7 @@ import { config } from "../config.ts";
 import { chunkIds, db, nowIso, placeholders } from "../db.ts";
 import { newId } from "../lib/crypto.ts";
 import { Data } from "./Data.ts";
+import { JsonFields } from "./jsonFields.ts";
 
 export type PhotoFields = {
   photoId: string;
@@ -132,6 +133,7 @@ export class PhotoData extends Data {
 
   validateData(): string[] {
     const problems: string[] = [];
+    if (!this.listingId.trim()) problems.push("Listing id is required");
     if (!this.fileUrl) problems.push("Photo is missing a file URL");
     if (!/^(https?:\/\/|\/uploads\/)/.test(this.fileUrl)) {
       problems.push("Photo URL must be an http(s) URL or an uploaded file path");
@@ -146,6 +148,21 @@ export class PhotoData extends Data {
     return problems;
   }
 
+  /**
+   * Insert, or update the row this photo id already has.
+   *
+   * listing_id and upload_timestamp are left out of the DO UPDATE SET on
+   * purpose. Both are facts about where the photo came from, fixed when it
+   * arrived: re-saving a photo re-describes it, it does not re-upload it.
+   *
+   * listing_id especially must not move. The file sits under
+   * UPLOAD_DIR/<listing_id>/ and fileUrl points at that path, so letting an
+   * update rewrite the column would leave the row pointing at one listing and
+   * the bytes at another — and would hand any caller holding a photo id a way
+   * to reattach someone else's photo to their own listing. Moving a photo
+   * between listings is not an operation this class offers; deleting it and
+   * uploading it again is.
+   */
   storeData(): void {
     db.prepare(
       `INSERT INTO photos (id, listing_id, file_url, file_size, sort_order, upload_timestamp)
@@ -266,7 +283,18 @@ export class PhotoData extends Data {
     if (abs.startsWith(config.uploadDir + path.sep) && fs.existsSync(abs)) fs.unlinkSync(abs);
   }
 
-  /** Registers an already-hosted image (used by the seed data). */
+  /**
+   * Registers an already-hosted image (used by the seed data).
+   *
+   * fileSize is 0 because nothing here knows the size and nothing may find
+   * out: the bytes live on someone else's server, and fetching them to
+   * measure would turn seeding into a network operation that fails offline
+   * and in CI. 0 is the honest answer — "not measured" — and it is also the
+   * safe one, because fileSize only ever feeds the upper bound in
+   * validateData(), which a remote photo cannot breach anyway: the size
+   * limit exists to cap what this server stores, and this server stores
+   * nothing for a remote photo.
+   */
   static fromRemoteUrl(listingId: string, url: string, sortOrder: number): PhotoData {
     return new PhotoData({
       photoId: newId("pho"),
@@ -319,6 +347,25 @@ export class PhotoData extends Data {
     db.prepare("DELETE FROM photos WHERE id = ?").run(photoId);
     PhotoData.discardFile(row.file_url);
     return true;
+  }
+
+  /**
+   * The inverse of toJSON(). toJSON() carries the photo's own id but not its
+   * listing id — a photo is always serialized inside the listing that owns it
+   * (see ListingData.toJSON), so repeating the id on every photo would be
+   * noise on the wire — which is why the listing id is a parameter here.
+   *
+   * Does not call validateData(), for the reason given on PricingData.fromJSON.
+   */
+  static fromJSON(listingId: string, json: unknown): PhotoData {
+    const fields = new JsonFields("PhotoData", json);
+    const photoId = fields.string("photoId");
+    const fileUrl = fields.string("fileUrl");
+    const fileSize = fields.number("fileSize");
+    const uploadTimestamp = fields.string("uploadTimestamp");
+    const sortOrder = fields.number("sortOrder");
+    fields.done(); // every problem at once, before any value above is trusted
+    return new PhotoData({ photoId, listingId, fileUrl, fileSize, uploadTimestamp, sortOrder });
   }
 
   toJSON() {

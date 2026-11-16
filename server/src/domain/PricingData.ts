@@ -1,5 +1,6 @@
 import { chunkIds, db, placeholders } from "../db.ts";
 import { Data } from "./Data.ts";
+import { JsonFields } from "./jsonFields.ts";
 
 type PricingRow = {
   listing_id: string;
@@ -52,6 +53,7 @@ export class PricingData extends Data {
 
   validateData(): string[] {
     const problems: string[] = [];
+    if (!this.listingId.trim()) problems.push("Listing id is required");
     if (!Number.isFinite(this.monthlyRent) || this.monthlyRent <= 0) {
       problems.push("Monthly rent must be greater than $0");
     }
@@ -65,7 +67,14 @@ export class PricingData extends Data {
     if (!Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime()) && to <= from) {
       problems.push("Available-to must be after available-from");
     }
-    if (this.deposit < 0) problems.push("Deposit cannot be negative");
+    // Non-finite folds into the lower bound, the same way it does for rent:
+    // a deposit that is not a number is not a deposit of zero or more.
+    if (!Number.isFinite(this.deposit) || this.deposit < 0) {
+      problems.push("Deposit cannot be negative");
+    }
+    if (this.deposit > 20_000) {
+      problems.push("Deposit looks unrealistic (over $20,000)");
+    }
     return problems;
   }
 
@@ -127,6 +136,33 @@ export class PricingData extends Data {
       }
     }
     return byListing;
+  }
+
+  /**
+   * The inverse of toJSON(). toJSON() omits the listing id — it is the key of
+   * the row the payload belongs to, not part of the payload — so the caller
+   * passes it in.
+   *
+   * Deliberately does not call validateData(): a payload can be well-formed
+   * and still describe something nobody may store, and those are two separate
+   * questions. Every store path asks validateData() for itself.
+   */
+  static fromJSON(listingId: string, json: unknown): PricingData {
+    const fields = new JsonFields("PricingData", json);
+    const monthlyRent = fields.number("monthlyRent");
+    const availableFrom = fields.string("availableFrom");
+    const availableTo = fields.string("availableTo");
+    const utilitiesIncluded = fields.boolean("utilitiesIncluded");
+    const deposit = fields.number("deposit");
+    fields.done(); // every problem at once, before any value above is trusted
+    return new PricingData({
+      listingId,
+      monthlyRent,
+      availableFrom,
+      availableTo,
+      utilitiesIncluded,
+      deposit,
+    });
   }
 
   toJSON() {

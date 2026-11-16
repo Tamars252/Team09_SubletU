@@ -84,9 +84,16 @@ describe("AC1: validateDraft mirrors ListingManager's rules", () => {
     assert.deepEqual(fieldsWithErrors({ monthlyRent: "20000" }), []);
   });
 
-  it("deposit: optional, never negative", () => {
+  it("deposit: optional, never negative, at most $20,000 (PricingData)", () => {
     assert.deepEqual(fieldsWithErrors({ deposit: "" }), []);
+    assert.deepEqual(fieldsWithErrors({ deposit: "0" }), []);
     assert.deepEqual(fieldsWithErrors({ deposit: "-1" }), ["deposit"]);
+    assert.deepEqual(fieldsWithErrors({ deposit: "20000" }), []);
+    assert.deepEqual(fieldsWithErrors({ deposit: "20001" }), ["deposit"]);
+    assert.equal(
+      validateDraft({ ...VALID, deposit: "20001" }).deposit,
+      "Deposit looks unrealistic (over $20,000)",
+    );
   });
 
   it("dates: real calendar days, and the window must end after it starts", () => {
