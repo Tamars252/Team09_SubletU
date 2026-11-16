@@ -37,15 +37,49 @@ export function nowIso(): string {
   return new Date().toISOString();
 }
 
-/** Run a set of statements atomically. */
+/**
+ * How many transaction() calls are currently on the stack. 0 means the next
+ * one opens a real transaction; anything higher means it nests inside one.
+ */
+let transactionDepth = 0;
+
+/**
+ * Run a set of statements atomically, nesting if one is already open.
+ *
+ * SQLite has no nested `BEGIN`: a second one on the same connection fails with
+ * "cannot start a transaction within a transaction", and a nested `COMMIT`
+ * would commit the outer caller's work early. So only the outermost call uses
+ * BEGIN/COMMIT/ROLLBACK; an inner one brackets itself with a SAVEPOINT and
+ * RELEASEs it on success.
+ *
+ * That makes the unit of atomicity the outermost call, which is what a caller
+ * wrapping two already-atomic operations means by it. An inner failure the
+ * outer one catches undoes only the inner statements; an outer failure undoes
+ * everything, including inner work that had already been RELEASEd.
+ */
 export function transaction<T>(fn: () => T): T {
-  db.exec("BEGIN");
+  // Depth-numbered, and the nesting is a strict stack, so two live savepoints
+  // can never share a name.
+  const savepoint = transactionDepth > 0 ? `sp_${transactionDepth}` : null;
+
+  db.exec(savepoint ? `SAVEPOINT ${savepoint}` : "BEGIN");
+  transactionDepth += 1;
   try {
     const result = fn();
-    db.exec("COMMIT");
+    db.exec(savepoint ? `RELEASE ${savepoint}` : "COMMIT");
     return result;
   } catch (err) {
-    db.exec("ROLLBACK");
+    if (savepoint) {
+      // ROLLBACK TO rewinds to the savepoint but leaves it on the stack, so
+      // it is released separately. Without that the stack grows by one for
+      // every inner failure the outer call swallows.
+      db.exec(`ROLLBACK TO ${savepoint}`);
+      db.exec(`RELEASE ${savepoint}`);
+    } else {
+      db.exec("ROLLBACK");
+    }
     throw err;
+  } finally {
+    transactionDepth -= 1;
   }
 }
