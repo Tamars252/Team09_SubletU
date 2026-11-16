@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
-import { HOME_PATH, SAVED_PATH } from "../auth/guard.ts";
-import { IconCards, IconHeart } from "../components/Icons.tsx";
+import { HOME_PATH, POST_PATH, SAVED_PATH } from "../auth/guard.ts";
+import { IconCards, IconHeart, IconPlus } from "../components/Icons.tsx";
 
 type NavItem = {
   path: string;
@@ -17,6 +17,7 @@ type NavItem = {
  */
 export const NAV_ITEMS: NavItem[] = [
   { path: HOME_PATH, label: "Browse", Icon: IconCards },
+  { path: POST_PATH, label: "Post", Icon: IconPlus },
   { path: SAVED_PATH, label: "Saved", Icon: IconHeart, matchChildren: true },
 ];
 
