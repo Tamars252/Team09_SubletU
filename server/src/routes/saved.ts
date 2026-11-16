@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, nowIso } from "../db.ts";
+import { db, nowIso, transaction } from "../db.ts";
 import { ListingData } from "../domain/ListingData.ts";
 import { newId } from "../lib/crypto.ts";
 import { asyncHandler, notFound, requireString } from "../lib/http.ts";
@@ -47,10 +47,17 @@ savedRouter.post(
     const listing = ListingData.retrieveById(listingId);
     if (!listing || listing.status === "removed") throw notFound("Listing not found");
 
-    db.prepare(
-      `INSERT OR IGNORE INTO saved_listings (id, user_id, listing_id, created_at)
-       VALUES (?, ?, ?, ?)`,
-    ).run(newId("sav"), user.id, listingId, nowIso());
+    transaction(() => {
+      db.prepare(
+        `INSERT OR IGNORE INTO saved_listings (id, user_id, listing_id, created_at)
+         VALUES (?, ?, ?, ?)`,
+      ).run(newId("sav"), user.id, listingId, nowIso());
+      // A save overrides an earlier pass. Left behind, the pass would be the
+      // next thing undo restores, putting a saved listing back in the deck.
+      db.prepare(
+        "DELETE FROM swipes WHERE user_id = ? AND listing_id = ? AND direction = 'left'",
+      ).run(user.id, listingId);
+    });
 
     res.status(201).json({ ok: true, saved: true });
   }),
