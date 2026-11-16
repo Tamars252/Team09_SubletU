@@ -1,8 +1,13 @@
 # SubletU data model (ERD)
 
-This is the database behind the class diagram (`Class Diagram1.pdf`). The
-source of truth for every column is `server/src/db.ts`; this page shows the
-keys and relationships and records the decisions behind them.
+This is the database behind the class diagram (`Class Diagram1.pdf`). This
+page shows the keys and relationships and records the decisions behind them.
+
+For the column-by-column reference — every table with its types, constraints
+and foreign keys, generated from the DDL rather than written from memory, plus
+the migration system, the `ListingManager` API and the transaction and
+photo-file rules — see [`database-schema.md`](database-schema.md). The schema
+itself lives in `server/src/migrations.ts`.
 
 GitHub renders the diagram below. A PNG export for slides is in
 [`erd.png`](erd.png).
@@ -227,7 +232,10 @@ rows out: the deck and search default to `status = 'active'`, and
 ## Supporting tables not shown
 
 These exist for sign-in and infrastructure and do not correspond to any
-class: `oauth_states`, `sso_handoffs`, `email_verification_codes`,
-`password_reset_tokens` and `auth_attempts` (all reference `users` or are
-keyed by email/IP), and `geocache` (Nominatim results, keyed by query
-string). See `server/src/db.ts` for their columns.
+class: `geocache`, which holds Nominatim results keyed by query string. See
+[`database-schema.md`](database-schema.md) for its columns.
+
+(An earlier version of this section also listed `oauth_states`,
+`sso_handoffs`, `email_verification_codes`, `password_reset_tokens` and
+`auth_attempts`. None of them exist in the schema; sign-in uses `users`
+alone. If they are added later, they get migrations of their own.)
