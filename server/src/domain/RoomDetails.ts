@@ -1,5 +1,6 @@
 import { chunkIds, db, placeholders } from "../db.ts";
 import { Data } from "./Data.ts";
+import { JsonFields } from "./jsonFields.ts";
 
 type RoomDetailsRow = {
   listing_id: string;
@@ -142,6 +143,31 @@ export class RoomDetails extends Data {
       }
     }
     return byListing;
+  }
+
+  /**
+   * The inverse of toJSON(). Like PricingData's, it takes the listing id
+   * separately because toJSON() leaves it out, and it does not call
+   * validateData() — see the note there.
+   */
+  static fromJSON(listingId: string, json: unknown): RoomDetails {
+    const fields = new JsonFields("RoomDetails", json);
+    const bedrooms = fields.number("bedrooms");
+    const bathrooms = fields.number("bathrooms");
+    const maxRoommates = fields.number("maxRoommates");
+    const petsAllowed = fields.boolean("petsAllowed");
+    const furnished = fields.boolean("furnished");
+    const privateBath = fields.boolean("privateBath");
+    fields.done(); // every problem at once, before any value above is trusted
+    return new RoomDetails({
+      listingId,
+      bedrooms,
+      bathrooms,
+      maxRoommates,
+      petsAllowed,
+      furnished,
+      privateBath,
+    });
   }
 
   toJSON() {

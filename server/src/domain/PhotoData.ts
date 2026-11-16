@@ -4,6 +4,7 @@ import { config } from "../config.ts";
 import { chunkIds, db, nowIso, placeholders } from "../db.ts";
 import { newId } from "../lib/crypto.ts";
 import { Data } from "./Data.ts";
+import { JsonFields } from "./jsonFields.ts";
 
 export type PhotoFields = {
   photoId: string;
@@ -320,6 +321,25 @@ export class PhotoData extends Data {
     db.prepare("DELETE FROM photos WHERE id = ?").run(photoId);
     PhotoData.discardFile(row.file_url);
     return true;
+  }
+
+  /**
+   * The inverse of toJSON(). toJSON() carries the photo's own id but not its
+   * listing id — a photo is always serialized inside the listing that owns it
+   * (see ListingData.toJSON), so repeating the id on every photo would be
+   * noise on the wire — which is why the listing id is a parameter here.
+   *
+   * Does not call validateData(), for the reason given on PricingData.fromJSON.
+   */
+  static fromJSON(listingId: string, json: unknown): PhotoData {
+    const fields = new JsonFields("PhotoData", json);
+    const photoId = fields.string("photoId");
+    const fileUrl = fields.string("fileUrl");
+    const fileSize = fields.number("fileSize");
+    const uploadTimestamp = fields.string("uploadTimestamp");
+    const sortOrder = fields.number("sortOrder");
+    fields.done(); // every problem at once, before any value above is trusted
+    return new PhotoData({ photoId, listingId, fileUrl, fileSize, uploadTimestamp, sortOrder });
   }
 
   toJSON() {
