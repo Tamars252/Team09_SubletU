@@ -228,9 +228,52 @@ describe("AC3: only the owner can edit or delete a listing", () => {
     assert.ok(!ids({}).has(L.cheap));
   });
 
+  // The other half of the soft-delete decision in docs/ERD.md: removed is
+  // final. The photos are kept as part of the record, not so the listing can
+  // be brought back, and nothing may bring it back.
+  it("will not edit or reactivate a removed listing", async () => {
+    const id = await submit(host, { title: "Room that gets deleted" });
+    assert.ok(new ListingManager().deleteListing(id, host).ok);
+
+    const m = new ListingManager();
+    const edit = await m.updateListing(id, host, { title: "Quietly back again" });
+    assert.equal(edit.ok, false);
+    assert.equal(edit.state, "not_found");
+
+    const reactivate = await m.updateListing(id, host, { status: "active" });
+    assert.equal(reactivate.ok, false);
+    assert.equal(reactivate.state, "not_found");
+
+    const row = db.prepare("SELECT status, title FROM listings WHERE id = ?").get(id) as {
+      status: string;
+      title: string;
+    };
+    assert.equal(row.status, "removed");
+    assert.equal(row.title, "Room that gets deleted");
+  });
+
   it("reports not_found for a listing that doesn't exist", () => {
     const m = new ListingManager();
     assert.equal(m.deleteListing("lst_missing", host).ok, false);
     assert.equal(m.operationStatus, "not_found");
+  });
+
+  // TM09-121: the result carries the same OperationState the manager is left
+  // in, so a route can branch on the value it was handed rather than reaching
+  // back into the manager.
+  it("reports the operation state in the result, matching the manager's", async () => {
+    const m = new ListingManager();
+
+    const forbidden = await m.updateListing(L.pricey, other, { title: "Hijacked title" });
+    assert.equal(forbidden.state, "forbidden");
+    assert.equal(forbidden.state, m.operationStatus);
+
+    const missing = m.deleteListing("lst_missing", host);
+    assert.equal(missing.state, "not_found");
+    assert.equal(missing.state, m.operationStatus);
+
+    const updated = await m.updateListing(L.pricey, host, { title: "Luxury two bedroom" });
+    assert.equal(updated.state, "updated");
+    assert.equal(updated.state, m.operationStatus);
   });
 });

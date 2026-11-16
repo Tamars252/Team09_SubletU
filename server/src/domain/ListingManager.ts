@@ -34,17 +34,57 @@ export type SubmitListingInput = {
 
 type DecodedPhoto = { bytes: Buffer; ext: string };
 
+/**
+ * Every state an operation can leave the manager in.
+ *
+ * The class diagram calls `operationStatus` a String, and as a plain string it
+ * was one: the routes branch on it to pick a status code, and `"not_fuond"`
+ * would have compiled, matched nothing and quietly turned a 404 into a 422.
+ * As a union the compiler knows the whole set, so a typo on either side of the
+ * comparison is a tsc error rather than a wrong response.
+ *
+ *   idle           nothing has happened yet
+ *   validating     validateData() is running
+ *   valid          it passed
+ *   invalid        it did not
+ *   photo_rejected a photo could not be decoded, or there were too many
+ *   rejected       validation failed, so the write never started
+ *   submitted      a new listing was stored
+ *   retrieving     a read is running
+ *   retrieved      the read found something (or, for a list, finished)
+ *   not_found      no such listing, or it has been removed
+ *   forbidden      the listing belongs to somebody else
+ *   updated        an existing listing was stored
+ *   deleted        a listing was soft-deleted
+ */
+export type OperationState =
+  | "idle"
+  | "validating"
+  | "valid"
+  | "invalid"
+  | "photo_rejected"
+  | "rejected"
+  | "submitted"
+  | "retrieving"
+  | "retrieved"
+  | "not_found"
+  | "forbidden"
+  | "updated"
+  | "deleted";
+
 export type OperationStatus = {
   ok: boolean;
   message: string;
   problems: string[];
   listing: ListingData | null;
+  /** The same value as the manager's `operationStatus`, carried in the result. */
+  state: OperationState;
 };
 
 /**
  * ListingManager
  *   - listing : ListingData
- *   - operationStatus : String
+ *   - operationStatus : String   (OperationState here; see above)
  *   + ValidateListing() + SubmitListing() + RetrieveListing()
  *   + UpdateListing()   + DeleteListing()
  *
@@ -56,7 +96,18 @@ export const MAX_PHOTOS_PER_LISTING = 10;
 
 export class ListingManager {
   listing: ListingData | null = null;
-  operationStatus = "idle";
+  operationStatus: OperationState = "idle";
+
+  /**
+   * Records the state the operation ended in and reports it back.
+   *
+   * Setting the field and building the result in one place is what stops
+   * `operationStatus` and the returned `state` from ever disagreeing.
+   */
+  private settle(state: OperationState, result: Omit<OperationStatus, "state">): OperationStatus {
+    this.operationStatus = state;
+    return { ...result, state };
+  }
 
   /**
    * Writes the decoded photos and stores the listing as one unit.
@@ -109,13 +160,12 @@ export class ListingManager {
       }
       decoded = input.photoDataUrls.map((dataUrl) => PhotoData.decodeDataUrl(dataUrl));
     } catch (err) {
-      this.operationStatus = "photo_rejected";
-      return {
+      return this.settle("photo_rejected", {
         ok: false,
         message: "A photo could not be accepted",
         problems: [(err as Error).message],
         listing: null,
-      };
+      });
     }
 
     const photos = (input.photoUrls ?? []).map((url, i) =>
@@ -160,21 +210,24 @@ export class ListingManager {
 
     const problems = this.validateListing(listing);
     if (problems.length > 0) {
-      this.operationStatus = "rejected";
-      return { ok: false, message: "Listing was not accepted", problems, listing: null };
+      return this.settle("rejected", {
+        ok: false,
+        message: "Listing was not accepted",
+        problems,
+        listing: null,
+      });
     }
 
     this.storeWithPhotos(listing, decoded);
     this.listing = listing;
-    this.operationStatus = "submitted";
-    return {
+    return this.settle("submitted", {
       ok: true,
       message: point
         ? "Listing published"
         : "Listing published, but we could not place the address on the map yet",
       problems: [],
       listing,
-    };
+    });
   }
 
   /* ------------------------------------------------------- RetrieveListing */
@@ -204,12 +257,20 @@ export class ListingManager {
     // A removed listing is gone as far as callers are concerned. Without this,
     // PATCH { status: "active" } would quietly bring a deleted listing back.
     if (!listing || listing.status === "removed") {
-      this.operationStatus = "not_found";
-      return { ok: false, message: "Listing not found", problems: [], listing: null };
+      return this.settle("not_found", {
+        ok: false,
+        message: "Listing not found",
+        problems: [],
+        listing: null,
+      });
     }
     if (listing.ownerId !== ownerId) {
-      this.operationStatus = "forbidden";
-      return { ok: false, message: "You can only edit your own listings", problems: [], listing: null };
+      return this.settle("forbidden", {
+        ok: false,
+        message: "You can only edit your own listings",
+        problems: [],
+        listing: null,
+      });
     }
 
     const addressChanged =
@@ -259,26 +320,28 @@ export class ListingManager {
         }
         decoded = patch.photoDataUrls.map((dataUrl) => PhotoData.decodeDataUrl(dataUrl));
       } catch (err) {
-        this.operationStatus = "photo_rejected";
-        return {
+        return this.settle("photo_rejected", {
           ok: false,
           message: "A photo could not be accepted",
           problems: [(err as Error).message],
           listing: null,
-        };
+        });
       }
     }
 
     const problems = this.validateListing(listing);
     if (problems.length > 0) {
-      this.operationStatus = "rejected";
-      return { ok: false, message: "Update was not accepted", problems, listing: null };
+      return this.settle("rejected", {
+        ok: false,
+        message: "Update was not accepted",
+        problems,
+        listing: null,
+      });
     }
 
     this.storeWithPhotos(listing, decoded);
     this.listing = listing;
-    this.operationStatus = "updated";
-    return { ok: true, message: "Listing updated", problems: [], listing };
+    return this.settle("updated", { ok: true, message: "Listing updated", problems: [], listing });
   }
 
   /* --------------------------------------------------------- DeleteListing */
@@ -288,24 +351,33 @@ export class ListingManager {
       | { owner_id: string }
       | undefined;
     if (!row) {
-      this.operationStatus = "not_found";
-      return { ok: false, message: "Listing not found", problems: [], listing: null };
+      return this.settle("not_found", {
+        ok: false,
+        message: "Listing not found",
+        problems: [],
+        listing: null,
+      });
     }
     if (row.owner_id !== ownerId) {
-      this.operationStatus = "forbidden";
-      return {
+      return this.settle("forbidden", {
         ok: false,
         message: "You can only delete your own listings",
         problems: [],
         listing: null,
-      };
+      });
     }
 
     transaction(() => {
-      // Soft-delete keeps conversation history intact for both parties — and
-      // keeps the photos, so the owner can set the listing back to active.
-      // A hard delete would cascade to photos through the schema's foreign
-      // keys; destroying them here left a "removed" listing unrecoverable.
+      // Soft-delete, so conversation history and any reports filed against
+      // the listing survive the host deleting it. A hard DELETE would cascade
+      // through the schema's foreign keys and take the moderation evidence
+      // with it, which is exactly what a scammer would want.
+      //
+      // The photos stay for the same reason: they are part of the record a
+      // report is about. They are not kept so the listing can come back —
+      // removed is final. updateListing() treats a removed listing as not
+      // found, and PATCH only ever accepts "active" or "paused", so nothing
+      // can reactivate one. See docs/ERD.md, "Soft-delete decision".
       db.prepare("UPDATE listings SET status = 'removed', updated_at = ? WHERE id = ?").run(
         nowIso(),
         listingId,
@@ -313,8 +385,12 @@ export class ListingManager {
       db.prepare("DELETE FROM saved_listings WHERE listing_id = ?").run(listingId);
     });
 
-    this.operationStatus = "deleted";
     this.listing = null;
-    return { ok: true, message: "Listing removed", problems: [], listing: null };
+    return this.settle("deleted", {
+      ok: true,
+      message: "Listing removed",
+      problems: [],
+      listing: null,
+    });
   }
 }
