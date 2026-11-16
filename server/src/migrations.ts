@@ -213,6 +213,12 @@ function addColumnIfMissing(
   column: string,
   ddl: string,
 ): void {
+  // SQL-safety invariant: fixed SQL fragments only; every value goes through
+  // params. PRAGMA and ALTER TABLE take neither a bound table name nor a
+  // bound column name, so these three are interpolated — and all three are
+  // string literals written in the migration list below, never caller or
+  // request input. Nothing here reaches a value: `columns` is read back
+  // through the driver and compared in JavaScript.
   const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
   if (columns.some((c) => c.name === column)) return;
   db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
@@ -276,8 +282,9 @@ export function runMigrations(db: DatabaseSync, list: Migration[] = migrations):
     db.exec("BEGIN");
     try {
       migration.up(db);
-      // PRAGMA takes no bound parameters, so the version is interpolated.
-      // It is a number from the literal list above, never caller input.
+      // SQL-safety invariant: fixed SQL fragments only; every value goes
+      // through params. PRAGMA accepts no bound parameters, so the version is
+      // interpolated — it is a number from the migration list, never input.
       db.exec(`PRAGMA user_version = ${migration.version}`);
       db.exec("COMMIT");
     } catch (err) {

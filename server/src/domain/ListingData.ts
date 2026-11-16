@@ -342,6 +342,12 @@ export class ListingData extends Data {
    * against the already-narrowed result set.
    */
   static filterData(filter: ListingFilter): ListingData[] {
+    // SQL-safety invariant for everything below: `where` collects fixed SQL
+    // fragments only — string literals written in this file, never anything
+    // derived from `filter` — and every value goes through `params`, bound by
+    // the driver. A filter is allowed to decide WHETHER a fragment is added;
+    // it is never allowed to contribute SQL text. Adding a filter means adding
+    // a literal fragment with `?` in it and pushing the value, in that order.
     const where: string[] = [];
     const params: Array<string | number> = [];
 

@@ -253,6 +253,31 @@ describe("AC2: filterData() reads stored listings back as ListingData", () => {
     assert.equal(titles({ q: "Ostrom", maxPrice: 600 }).length, 0);
     assert.equal(titles({ q: "Ostrom", maxPrice: 700 }).length, 1);
   });
+
+  // TM09-121: filterData() builds its WHERE out of fixed fragments and binds
+  // every value. If `q` were ever concatenated in, the classic payload would
+  // close the LIKE, OR in a condition that is always true and comment out the
+  // rest of the clause — which would hand back the paused listing and every
+  // other owner's rows as well.
+  it("treats a SQL payload in q as text to search for, not as SQL", () => {
+    const injected = titles({ q: "' OR 1=1 --" });
+    assert.deepEqual(injected, [], "a q filter must never widen the result set");
+
+    // Same query without the payload, to show the rows are there to be leaked.
+    assert.equal(titles({}).length, 1);
+
+    // It really is matched as a literal. Its own owner, so the extra row
+    // cannot change what the assertions above this one see.
+    const quoteOwner = addUser("Quote Owner");
+    make(quoteOwner, { title: "Quote fixture: ' OR 1=1 -- in the title" }).storeData();
+    make(quoteOwner, { title: "Quote fixture: ordinary room" }).storeData();
+
+    const matched = ListingData.filterData({ ownerId: quoteOwner, q: "' OR 1=1 --" });
+    assert.deepEqual(
+      matched.map((l) => l.title),
+      ["Quote fixture: ' OR 1=1 -- in the title"],
+    );
+  });
 });
 
 /* ------------------------------------------------------------------- AC3 */
