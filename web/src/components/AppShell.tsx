@@ -5,7 +5,7 @@ import { useAuth } from "../state/AuthContext.tsx";
 import { BottomNav } from "./BottomNav.tsx";
 import { FilterSheet } from "./FilterSheet.tsx";
 import { IconSliders } from "./Icons.tsx";
-import { HOME_PATH } from "../auth/guard.ts";
+import { HOME_PATH, MAP_PATH } from "../auth/guard.ts";
 import { EMPTY_FILTERS, activeFilterCount } from "../api/types.ts";
 import type { Filters, Reference } from "../api/types.ts";
 
@@ -45,7 +45,7 @@ export function AppShell() {
   }, []);
 
   const filterCount = activeFilterCount(filters);
-  const filterable = location.pathname === HOME_PATH;
+  const filterable = location.pathname === HOME_PATH || location.pathname === MAP_PATH;
 
   return (
     <div className="app">
