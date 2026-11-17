@@ -13,7 +13,7 @@ memory. Regenerate them after adding a migration.
 | | |
 |---|---|
 | Driver | `node:sqlite`'s `DatabaseSync` — in the standard library from Node 22.5, so there is no native dependency to build. Synchronous, one connection for the process. |
-| Node | >= 22.6 (`engines` in the root `package.json`) |
+| Node | >= 22.18 (`engines` in the root `package.json`): the first 22.x that runs `.ts` files without a flag |
 | File | `DATABASE_FILE`, default `server/data/subletu.db`, resolved relative to `server/` |
 | Opened in | [`server/src/db.ts`](../server/src/db.ts) |
 
