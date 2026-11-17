@@ -81,26 +81,48 @@ export function verifyToken(token: string): JwtPayload | null {
 
 const settingsKey = crypto.createHash("sha256").update(config.settingsSecret).digest();
 
-/** Backs ScreenSettings.EncryptData() from the class diagram. */
+/** The GCM nonce length NIST recommends, and the only one we ever write. */
+const IV_BYTES = 12;
+/** The full GCM tag. Anything shorter is a weaker check, so it is refused. */
+const TAG_BYTES = 16;
+
+/**
+ * Backs ScreenSettings.EncryptData() from the class diagram.
+ *
+ * Output is `iv.tag.ciphertext`, each part base64url: a fresh random 12-byte
+ * IV, the 16-byte GCM authentication tag, then the encrypted JSON.
+ */
 export function encryptJson(value: unknown): string {
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", settingsKey, iv);
+  const iv = crypto.randomBytes(IV_BYTES);
+  const cipher = crypto.createCipheriv("aes-256-gcm", settingsKey, iv, {
+    authTagLength: TAG_BYTES,
+  });
   const enc = Buffer.concat([cipher.update(JSON.stringify(value), "utf8"), cipher.final()]);
   return [iv.toString("base64url"), cipher.getAuthTag().toString("base64url"), enc.toString("base64url")].join(".");
 }
 
-/** Backs ScreenSettings.DecryptData(). Returns null on tamper or key rotation. */
+/**
+ * Backs ScreenSettings.DecryptData(). Returns null on tamper or key rotation.
+ *
+ * The tag length is fixed on purpose. Without `authTagLength`, Node accepts a
+ * tag as short as 4 bytes and compares only that many, so a blob with its tag
+ * cut down still decrypted, and the odds of forging one fell from 1 in 2^128
+ * to 1 in 2^32.
+ */
 export function decryptJson<T>(blob: string | null): T | null {
   if (!blob) return null;
-  const [ivB64, tagB64, dataB64] = blob.split(".");
+  const parts = blob.split(".");
+  if (parts.length !== 3) return null;
+  const [ivB64, tagB64, dataB64] = parts;
   if (!ivB64 || !tagB64 || !dataB64) return null;
+  const iv = Buffer.from(ivB64, "base64url");
+  const tag = Buffer.from(tagB64, "base64url");
+  if (iv.length !== IV_BYTES || tag.length !== TAG_BYTES) return null;
   try {
-    const decipher = crypto.createDecipheriv(
-      "aes-256-gcm",
-      settingsKey,
-      Buffer.from(ivB64, "base64url"),
-    );
-    decipher.setAuthTag(Buffer.from(tagB64, "base64url"));
+    const decipher = crypto.createDecipheriv("aes-256-gcm", settingsKey, iv, {
+      authTagLength: TAG_BYTES,
+    });
+    decipher.setAuthTag(tag);
     const dec = Buffer.concat([
       decipher.update(Buffer.from(dataB64, "base64url")),
       decipher.final(),
