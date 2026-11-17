@@ -1,12 +1,21 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/AppShell.tsx";
 import { ProtectedRoute } from "./components/ProtectedRoute.tsx";
-import { HOME_PATH, POST_PATH, REGISTER_PATH, SAVED_PATH, SIGN_IN_PATH } from "./auth/guard.ts";
+import {
+  HOME_PATH,
+  MESSAGES_PATH,
+  POST_PATH,
+  REGISTER_PATH,
+  SAVED_PATH,
+  SIGN_IN_PATH,
+} from "./auth/guard.ts";
 import { Browse } from "./screens/Browse.tsx";
+import { Messages } from "./screens/Messages.tsx";
 import { Post } from "./screens/Post.tsx";
 import { Register } from "./screens/Register.tsx";
 import { Saved } from "./screens/Saved.tsx";
 import { SignIn } from "./screens/SignIn.tsx";
+import { Thread } from "./screens/Thread.tsx";
 
 /**
  * Routes. The auth screens are public; everything else sits behind
@@ -24,6 +33,8 @@ export function App() {
           <Route path={HOME_PATH} element={<Browse />} />
           <Route path={POST_PATH} element={<Post />} />
           <Route path={SAVED_PATH} element={<Saved />} />
+          <Route path={MESSAGES_PATH} element={<Messages />} />
+          <Route path={`${MESSAGES_PATH}/:id`} element={<Thread />} />
         </Route>
       </Route>
       {/* Unknown URLs go through the guard rather than 404-ing, so a stale

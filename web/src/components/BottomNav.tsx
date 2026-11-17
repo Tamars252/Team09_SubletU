@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
-import { HOME_PATH, POST_PATH, SAVED_PATH } from "../auth/guard.ts";
-import { IconCards, IconHeart, IconPlus } from "../components/Icons.tsx";
+import { HOME_PATH, MESSAGES_PATH, POST_PATH, SAVED_PATH } from "../auth/guard.ts";
+import { IconCards, IconChat, IconHeart, IconPlus } from "../components/Icons.tsx";
+import { unreadLabel } from "../lib/messages.ts";
 
 type NavItem = {
   path: string;
@@ -19,6 +20,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: HOME_PATH, label: "Browse", Icon: IconCards },
   { path: POST_PATH, label: "Post", Icon: IconPlus },
   { path: SAVED_PATH, label: "Saved", Icon: IconHeart, matchChildren: true },
+  { path: MESSAGES_PATH, label: "Messages", Icon: IconChat, matchChildren: true },
 ];
 
 /**
@@ -30,21 +32,34 @@ export const NAV_ITEMS: NavItem[] = [
  *
  * NavLink sets `active` for us; `end` on the home item stops "/" matching
  * every path, since every path starts with it.
+ *
+ * `badges` maps a path to a count. A count above zero shows the dot and adds
+ * the number to the link's accessible name — TM09-104 uses it for unread
+ * messages.
  */
-export function BottomNav() {
+export function BottomNav({ badges = {} }: { badges?: Partial<Record<string, number>> }) {
   return (
     <nav className="nav" aria-label="Main">
-      {NAV_ITEMS.map(({ path, label, Icon, matchChildren }) => (
-        <NavLink
-          key={path}
-          to={path}
-          end={!matchChildren}
-          className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
-        >
-          <Icon size={21} />
-          <span>{label}</span>
-        </NavLink>
-      ))}
+      {NAV_ITEMS.map(({ path, label, Icon, matchChildren }) => {
+        const badge = unreadLabel(badges[path] ?? 0);
+        return (
+          <NavLink
+            key={path}
+            to={path}
+            end={!matchChildren}
+            className={({ isActive }) => `nav-item${isActive ? " active" : ""}`}
+          >
+            <Icon size={21} />
+            <span>{label}</span>
+            {badge && (
+              <>
+                <span className="nav-dot" aria-hidden="true" />
+                <span className="sr-only">, {badge}</span>
+              </>
+            )}
+          </NavLink>
+        );
+      })}
     </nav>
   );
 }

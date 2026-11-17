@@ -223,10 +223,11 @@ export const api = {
     return request<{ results: Conversation[] }>(`/messages/conversations?archived=${archived}`);
   },
 
-  startConversation(listingId: string, message: string) {
+  /** Starts or reuses the thread for this listing; `body` becomes its next message. */
+  startConversation(listingId: string, body: string) {
     return request<{ conversationId: string }>("/messages/conversations", {
       method: "POST",
-      body: { listingId, message },
+      body: { listingId, body },
     });
   },
 

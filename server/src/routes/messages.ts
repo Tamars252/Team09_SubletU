@@ -48,7 +48,10 @@ messagesRouter.post(
     const user = currentUser(req);
     const body = req.body as Record<string, unknown>;
     const listingId = requireString(body, "listingId", { min: 3, max: 64 });
-    const firstMessage = optionalString(body, "message", "", 2000);
+    // `body` is the field docs/api-contract.md names. `message` is what this
+    // route read before, and is still accepted so older clients keep working.
+    const firstMessage =
+      optionalString(body, "body", "", 2000) || optionalString(body, "message", "", 2000);
 
     const listing = ListingData.retrieveById(listingId);
     if (!listing || listing.status === "removed") throw notFound("Listing not found");
@@ -85,8 +88,16 @@ messagesRouter.post(
           conversationId,
         );
       }
-      // Reaching out un-archives the thread for both sides.
-      db.prepare("DELETE FROM conversation_state WHERE conversation_id = ?").run(conversationId);
+      // Reaching out brings the thread back for the renter. The host only gets
+      // it back when something new actually arrived: re-opening a thread
+      // without writing must not undo the host's archive (FR-7.5).
+      if (firstMessage) {
+        db.prepare("DELETE FROM conversation_state WHERE conversation_id = ?").run(conversationId);
+      } else {
+        db.prepare(
+          "DELETE FROM conversation_state WHERE conversation_id = ? AND user_id = ?",
+        ).run(conversationId, user.id);
+      }
     });
 
     res.status(created ? 201 : 200).json({ conversationId });
@@ -110,17 +121,20 @@ messagesRouter.get(
                 u.name AS other_name, u.avatar_initials AS other_initials,
                 u.verified AS other_verified, u.university AS other_university,
                 (SELECT body FROM messages WHERE conversation_id = c.id
-                  ORDER BY created_at DESC LIMIT 1) AS last_body,
+                  ORDER BY created_at DESC, rowid DESC LIMIT 1) AS last_body,
                 (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id
                   AND sender_id <> ? AND read_at IS NULL) AS unread
          FROM conversations c
          JOIN listings l ON l.id = c.listing_id
          JOIN users u ON u.id = CASE WHEN c.guest_id = ? THEN c.host_id ELSE c.guest_id END
          LEFT JOIN conversation_state cs ON cs.conversation_id = c.id AND cs.user_id = ?
-         WHERE (c.guest_id = ? OR c.host_id = ?)
+         WHERE (c.guest_id = ?
+                OR (c.host_id = ? AND EXISTS (SELECT 1 FROM messages WHERE conversation_id = c.id)))
            AND COALESCE(cs.archived, 0) = ?
          ORDER BY c.last_message_at DESC`,
       )
+      // A host only sees a thread once it has a message in it, so a renter who
+      // opens a thread and backs out does not leave an empty one behind.
       .all(user.id, user.id, user.id, user.id, user.id, archived ? 1 : 0) as Array<
       Record<string, unknown>
     >;
@@ -249,13 +263,17 @@ messagesRouter.get(
   "/unread-count",
   asyncHandler(async (req, res) => {
     const user = currentUser(req);
+    // Counts the same threads the inbox lists. A thread archived with unread
+    // messages in it would otherwise leave a badge with nothing to click.
     const row = db
       .prepare(
         `SELECT COUNT(*) AS n FROM messages m
          JOIN conversations c ON c.id = m.conversation_id
-         WHERE (c.guest_id = ? OR c.host_id = ?) AND m.sender_id <> ? AND m.read_at IS NULL`,
+         LEFT JOIN conversation_state cs ON cs.conversation_id = c.id AND cs.user_id = ?
+         WHERE (c.guest_id = ? OR c.host_id = ?) AND m.sender_id <> ? AND m.read_at IS NULL
+           AND COALESCE(cs.archived, 0) = 0`,
       )
-      .get(user.id, user.id, user.id) as { n: number };
+      .get(user.id, user.id, user.id, user.id) as { n: number };
     res.json({ unread: row.n });
   }),
 );
