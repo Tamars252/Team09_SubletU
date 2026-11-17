@@ -1,8 +1,9 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/AppShell.tsx";
 import { ProtectedRoute } from "./components/ProtectedRoute.tsx";
-import { HOME_PATH, POST_PATH, REGISTER_PATH, SAVED_PATH, SIGN_IN_PATH } from "./auth/guard.ts";
+import { HOME_PATH, MAP_PATH, POST_PATH, REGISTER_PATH, SAVED_PATH, SIGN_IN_PATH } from "./auth/guard.ts";
 import { Browse } from "./screens/Browse.tsx";
+import { MapScreen } from "./screens/MapScreen.tsx";
 import { Post } from "./screens/Post.tsx";
 import { Register } from "./screens/Register.tsx";
 import { Saved } from "./screens/Saved.tsx";
@@ -22,6 +23,7 @@ export function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
           <Route path={HOME_PATH} element={<Browse />} />
+          <Route path={MAP_PATH} element={<MapScreen />} />
           <Route path={POST_PATH} element={<Post />} />
           <Route path={SAVED_PATH} element={<Saved />} />
         </Route>
