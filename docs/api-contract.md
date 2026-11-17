@@ -392,6 +392,15 @@ everything the renter has swiped **or** saved.
 Starts or reuses the thread for this renter and listing — `UNIQUE (listing_id, guest_id)`
 guarantees one thread per pair, so an inquiry always lands in the same place.
 
+`body` is optional, 1–2000 characters, and becomes the first message (or the next one, on
+an existing thread). `message` is accepted as an older name for the same field.
+
+- The host only sees the thread once it has at least one message, so opening a thread and
+  backing out leaves nothing in the host's inbox.
+- The call takes the thread out of the **renter's** archive. It takes it out of the
+  **host's** archive only when it carries a message, because only then has something new
+  arrived for the host.
+
 **`201`** (new) or **`200`** (existing) → `{ "conversationId": "cnv_…" }`
 
 ### `GET /messages/conversations` · auth required
@@ -404,7 +413,8 @@ Query `?archived=true` for the archived list; defaults to the inbox.
 { "results": [ {
   "id": "cnv_…", "listingId": "lst_…", "listingTitle": "…", "listingStatus": "active",
   "listingPhoto": "/uploads/…", "monthlyRent": 575,
-  "role": "guest", "other": { "id": "usr_…", "name": "Daniel R." },
+  "role": "guest",
+  "other": { "name": "Daniel R.", "initials": "DR", "verified": true, "university": "Syracuse University" },
   "lastMessage": "…", "lastMessageAt": "…", "unread": 2, "archived": false
 } ] }
 ```
@@ -416,8 +426,8 @@ Query `?archived=true` for the archived list; defaults to the inbox.
 ```json
 {
   "conversation": { "id": "cnv_…", "listingId": "lst_…", "role": "guest", "listing": Listing },
-  "results": [ { "id": "msg_…", "senderId": "usr_…", "body": "…",
-                 "createdAt": "…", "readAt": null } ]
+  "results": [ { "id": "msg_…", "senderId": "usr_…", "senderName": "Daniel R.", "body": "…",
+                 "createdAt": "…", "readAt": null, "mine": false } ]
 }
 ```
 
@@ -429,7 +439,10 @@ Oldest first. Reading a thread marks the other party's messages read.
 { "body": "Yes, still open." }
 ```
 
-**`201`** → the created message
+**`201`** → `{ "message": { "id": "msg_…", "senderId": "usr_…", "body": "…", "createdAt": "…",
+"readAt": null, "mine": true } }` · **`400`** empty body · **`403`** not a participant
+
+A new message takes the thread out of the **recipient's** archive, never the sender's.
 
 ### `POST /messages/conversations/:id/archive` · auth required, participant only
 
@@ -444,8 +457,13 @@ hides the thread only for the caller** (FR-7.5) — finding F-4.
 
 ### `GET /messages/unread-count` · auth required
 
-**`200`** → `{ "unread": 3 }`. Polled for the tab badge; there is no websocket layer
-(FR-7.6 is a Could).
+**`200`** → `{ "unread": 3 }`: messages from the other party that you have not read, in
+threads that are in your inbox. A thread you archived stops counting until it is back in
+the inbox, so the badge never points at a thread you cannot see.
+
+The web app polls this every 20 seconds for the Messages tab badge
+(`UNREAD_POLL_MS` in `web/src/lib/messages.ts`); there is no websocket layer (FR-7.6 is a
+Could).
 
 ---
 

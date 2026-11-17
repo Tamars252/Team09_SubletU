@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError, api } from "../api/client.ts";
 import { HOME_PATH } from "../auth/guard.ts";
-import { IconX } from "../components/Icons.tsx";
+import { ContactHostSheet } from "../components/ContactHostSheet.tsx";
+import { IconChat, IconX } from "../components/Icons.tsx";
 import {
   beginRemove,
   formatAvailability,
@@ -34,6 +35,20 @@ export function Saved() {
   const [state, setState] = useState<State>({ kind: "loading" });
   /** A failed unsave, shown above the list after the card is put back. */
   const [unsaveError, setUnsaveError] = useState<string | null>(null);
+  /** TM09-104: the listing whose host is being messaged, if any. */
+  const [contacting, setContacting] = useState<Listing | null>(null);
+  /** Where focus goes back to when the message sheet closes. */
+  const returnFocus = useRef<HTMLElement | null>(null);
+
+  function openContact(listing: Listing) {
+    returnFocus.current = document.activeElement as HTMLElement | null;
+    setContacting(listing);
+  }
+
+  const closeContact = useCallback(() => {
+    setContacting(null);
+    returnFocus.current?.focus();
+  }, []);
 
   const load = useCallback(() => {
     let stale = false;
@@ -136,14 +151,29 @@ export function Saved() {
 
       <ul className="saved-cards">
         {state.listings.map((listing) => (
-          <SavedCard key={listing.id} listing={listing} onUnsave={() => unsave(listing.id)} />
+          <SavedCard
+            key={listing.id}
+            listing={listing}
+            onUnsave={() => unsave(listing.id)}
+            onContact={() => openContact(listing)}
+          />
         ))}
       </ul>
+
+      {contacting && <ContactHostSheet listing={contacting} onClose={closeContact} />}
     </div>
   );
 }
 
-function SavedCard({ listing, onUnsave }: { listing: Listing; onUnsave: () => void }) {
+function SavedCard({
+  listing,
+  onUnsave,
+  onContact,
+}: {
+  listing: Listing;
+  onUnsave: () => void;
+  onContact: () => void;
+}) {
   const photo = primaryPhotoUrl(listing);
   const unavailable = unavailableLabel(listing);
   const location = formatLocation(listing);
@@ -182,6 +212,22 @@ function SavedCard({ listing, onUnsave }: { listing: Listing; onUnsave: () => vo
           <IconX size={17} />
         </button>
       </div>
+
+      {/* Outside the link for the same reason as unsave. A listing that is no
+          longer active has nothing to ask about. */}
+      {!unavailable && (
+        <div className="saved-contact">
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={onContact}
+            aria-label={`Message the host of ${listing.title}`}
+            title="Message host"
+          >
+            <IconChat size={17} />
+          </button>
+        </div>
+      )}
     </li>
   );
 }
